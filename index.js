@@ -25,37 +25,38 @@ app.post('/api/perguntar', async (req, res) => {
   try {
     console.log(`[TecAI] Nova rodada tripla iniciada para: "${pergunta}"`);
 
-    // 1. Três competidores rodando em paralelo no Promise.all
+    // 1. Três competidores rodando em paralelo
     const [chamadaDeepSeek, chamadaGemma, chamadaMiniMax] = await Promise.all([
       nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
         messages: [{ role: "user", content: pergunta }]
-      }).catch(err => ({ error: true, message: err.message })),
+      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
 
       nvidia.chat.completions.create({
         model: "google/diffusiongemma-26b-a4b-it",
         messages: [{ role: "user", content: pergunta }]
-      }).catch(err => ({ error: true, message: err.message })),
+      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
 
       nvidia.chat.completions.create({
         model: "minimaxai/minimax-m3",
         messages: [{ role: "user", content: pergunta }]
-      }).catch(err => ({ error: true, message: err.message }))
+      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' }))
     ]);
 
-    // Extraindo textos ou erros de cada modelo
-    const respostaDeepSeek = chamadaDeepSeek.error ? `Erro no competidor: ${chamadaDeepSeek.message}` : chamadaDeepSeek.choices[0].message.content;
-    const respostaGemma = chamadaGemma.error ? `Erro no competidor: ${chamadaGemma.message}` : chamadaGemma.choices[0].message.content;
-    const respostaMiniMax = chamadaMiniMax.error ? `Erro no competidor: ${chamadaMiniMax.message}` : chamadaMiniMax.choices[0].message.content;
+    // Uso do ?. (Optional Chaining) para impedir que o servidor quebre se a resposta vier estranha
+    const respostaDeepSeek = chamadaDeepSeek.error 
+      ? `Erro no competidor: ${chamadaDeepSeek.message}` 
+      : (chamadaDeepSeek.choices?.[0]?.message?.content || "Modelo retornou uma estrutura vazia.");
 
-    // Se as três falharem de uma vez
-    if (chamadaDeepSeek.error && chamadaGemma.error && chamadaMiniMax.error) {
-      return res.status(502).json({ 
-        error: `Todos os competidores falharam ao responder. Tente novamente.` 
-      });
-    }
+    const respostaGemma = chamadaGemma.error 
+      ? `Erro no competidor: ${chamadaGemma.message}` 
+      : (chamadaGemma.choices?.[0]?.message?.content || "Modelo retornou uma estrutura vazia.");
 
-    // 2. Montando o Ringue de Avaliação com 3 opções para o Juiz
+    const respostaMiniMax = chamadaMiniMax.error 
+      ? `Erro no competidor: ${chamadaMiniMax.message}` 
+      : (chamadaMiniMax.choices?.[0]?.message?.content || "Modelo retornou uma estrutura vazia.");
+
+    // 2. Montando o Ringue de Avaliação com as respostas obtidas
     const promptJuiz = `
 Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
 Analise a pergunta original do usuário e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
@@ -77,7 +78,7 @@ ${respostaMiniMax}
     const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
-    }).catch(err => ({ error: true, message: err.message }));
+    }).catch(err => ({ error: true, message: err.message || 'Erro de conexão do Juiz' }));
 
     if (chamadaJuiz.error) {
       return res.status(502).json({ 
@@ -86,9 +87,9 @@ ${respostaMiniMax}
       });
     }
 
-    const respostaVencedora = chamadaJuiz.choices[0].message.content;
+    const respostaVencedora = chamadaJuiz.choices?.[0]?.message?.content || "O Juiz não conseguiu extrair um texto válido.";
 
-    // 4. Retorno estruturado com a auditoria tripla
+    // 4. Retorno estruturado com a auditoria tripla segura
     res.json({
       respostaFinal: respostaVencedora,
       auditoria: {
@@ -105,6 +106,7 @@ ${respostaMiniMax}
 });
 
 const PORT = process.env.PORT || 3000;
+app.use((req, res) => res.status(404).send("Rota não encontrada"));
 app.listen(PORT, () => {
   console.log(`Servidor ativo na porta ${PORT}`);
 });
