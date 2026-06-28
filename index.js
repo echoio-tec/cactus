@@ -14,7 +14,7 @@ const nvidia = new OpenAI({
   timeout: 45000 
 });
 
-// FUNÇÃO ATUALIZADA: Conexão via API oficial da Tavily (Sem bloqueios de IP)
+// FUNÇÃO DE BUSCA: Conexão via API oficial da Tavily (Modo Advanced)
 async function buscarNaWeb(query) {
   try {
     if (!process.env.TAVILY_API_KEY) {
@@ -41,7 +41,6 @@ async function buscarNaWeb(query) {
       return "Nenhum resultado recente encontrado na internet.";
     }
 
-    // Une os títulos e conteúdos encontrados em um bloco de texto do sistema
     return data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n');
   } catch (err) {
     console.error('Erro na busca Tavily:', err);
@@ -80,16 +79,19 @@ app.post('/api/perguntar', async (req, res) => {
 
     const promptFinalModelos = [...mensagensSistema, ...historico];
 
+    // 1. Chamada paralela dos modelos
     const [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
       nvidia.chat.completions.create({ model: "google/diffusiongemma-26b-a4b-it", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
       nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message }))
     ]);
 
+    // Correção ortográfica estrita das variáveis abaixo (Sincronizadas com o Promise.all)
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
-    const respostaLlama8b = llamadaLlama8b.error ? `Erro: ${llamadaLlama8b.message}` : (llamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
+    const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
+    // 2. Ringue de avaliação do Juiz 70B
     const promptJuiz = `
 Você é um avaliador rigoroso de IA. Escolha qual das três opções fornece a melhor resposta para o usuário.
 Retorne APENAS o texto da melhor opção escolhida, sem comentários extras.
@@ -101,12 +103,12 @@ Opção 2: ${respostaGemma}
 Opção 3: ${respostaLlama8b}
     `;
 
-    const llamadaJuiz = await nvidia.chat.completions.create({
+    const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(err => ({ error: true, message: err.message }));
 
-    const respostaVencedora = llamadaJuiz.error ? respostaDeepSeek : llamadaJuiz.choices?.[0]?.message?.content;
+    const respostaVencedora = chamadaJuiz.error ? respostaDeepSeek : (chamadaJuiz.choices?.[0]?.message?.content || respostaDeepSeek);
 
     res.json({
       respostaFinal: respostaVencedora,
