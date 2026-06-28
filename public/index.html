@@ -14,7 +14,7 @@
       --border-color: #27272a;
       --color-deepseek: #0066ff;
       --color-gemma: #a855f7;
-      --color-minimax: #f97316;
+      --color-llama: #ff2a5f; /* Cor vibrante para o Llama */
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
@@ -38,87 +38,33 @@
     }
     header h1 { font-size: 1.6rem; font-weight: 800; color: var(--accent-color); }
     
-    /* Botão de abrir Configurações Inteligentes */
     .settings-toggle-btn {
-      background: #18181b;
-      border: 1px solid var(--border-color);
-      color: #a1a1aa;
-      padding: 6px 14px;
-      border-radius: 14px;
-      font-size: 0.8rem;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 8px;
-      display: inline-block;
-      transition: all 0.2s;
+      background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa;
+      padding: 6px 14px; border-radius: 14px; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; margin-top: 8px; display: inline-block; transition: all 0.2s;
     }
     .settings-toggle-btn:hover { border-color: var(--accent-color); color: #fff; }
 
-    /* Painel de Inteligência Personalizada */
     #settings-panel {
-      display: none;
-      background: #121214;
-      border: 1px solid var(--border-color);
-      max-width: 600px;
-      width: 90%;
-      margin: 10px auto 0 auto;
-      border-radius: 16px;
-      padding: 16px;
-      text-align: left;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      display: none; background: #121214; border: 1px solid var(--border-color);
+      max-width: 600px; width: 90%; margin: 10px auto 0 auto; border-radius: 16px;
+      padding: 16px; text-align: left; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
     }
-    .panel-section {
-      margin-bottom: 14px;
-      padding-bottom: 14px;
-      border-bottom: 1px solid #1f1f22;
-    }
+    .panel-section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #1f1f22; }
     .panel-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
-    
-    .section-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
-    }
+    .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .section-title { font-size: 0.9rem; font-weight: 700; color: #fff; }
     
-    /* Switch / Interruptor */
-    .switch {
-      position: relative;
-      display: inline-block;
-      width: 36px;
-      height: 20px;
-    }
+    .switch { position: relative; display: inline-block; width: 36px; height: 20px; }
     .switch input { opacity: 0; width: 0; height: 0; }
-    .slider {
-      position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
-      background-color: #27272a; transition: .3s; border-radius: 20px;
-    }
-    .slider:before {
-      position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px;
-      background-color: #a1a1aa; transition: .3s; border-radius: 50%;
-    }
+    .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #27272a; transition: .3s; border-radius: 20px; }
+    .slider:before { position: absolute; content: ""; height: 14px; width: 14px; left: 3px; bottom: 3px; background-color: #a1a1aa; transition: .3s; border-radius: 50%; }
     input:checked + .slider { background-color: #0066ff; }
     input:checked + .slider:before { transform: translateX(16px); background-color: #fff; }
 
-    .panel-textarea {
-      width: 100%;
-      background: #18181b;
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 10px;
-      color: #fff;
-      font-size: 0.85rem;
-      resize: vertical;
-      height: 60px;
-      outline: none;
-    }
+    .panel-textarea { width: 100%; background: #18181b; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; color: #fff; font-size: 0.85rem; resize: vertical; height: 60px; outline: none; }
     .panel-textarea:focus { border-color: #0066ff; }
-    .save-settings-btn {
-      background: #0066ff; color: #fff; border: none; padding: 6px 14px;
-      border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%;
-      margin-top: 5px;
-    }
+    .save-settings-btn { background: #0066ff; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
     .save-settings-btn:hover { background: #0052cc; }
 
     #chat-container { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 20px; max-width: 850px; width: 100%; margin: 0 auto; }
@@ -138,12 +84,12 @@
     .model-card { background: #141416; border-radius: 8px; padding: 12px 14px; font-size: 0.88rem; border-left: 4px solid #3f3f46; }
     .model-card.deepseek { border-left-color: var(--color-deepseek); }
     .model-card.gemma { border-left-color: var(--color-gemma); }
-    .model-card.minimax { border-left-color: var(--color-minimax); }
+    .model-card.llama { border-left-color: var(--color-llama); }
 
     .model-badge { font-weight: 700; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; display: inline-block; }
     .deepseek .model-badge { color: var(--color-deepseek); }
     .gemma .model-badge { color: var(--color-gemma); }
-    .minimax .model-badge { color: var(--color-minimax); }
+    .llama .model-badge { color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
     #input-container { padding: 24px 20px; max-width: 850px; width: 100%; margin: 0 auto; display: flex; gap: 12px; align-items: center; }
@@ -162,7 +108,7 @@
 
   <header>
     <h1>TecAI</h1>
-    <p>O ringue triplo de inteligência artificial com veredito do Llama 3.1 70B.</p>
+    <p>O ringue triplo com veredito do Llama 3.1 70B.</p>
     <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Inteligência Personalizada</button>
     
     <div id="settings-panel">
@@ -174,7 +120,7 @@
             <span class="slider"></span>
           </label>
         </div>
-        <textarea id="rules-input" class="panel-textarea" placeholder="Ex: 'Responda sempre em tópicos curtos', 'Use um tom descontraído e amigável'"></textarea>
+        <textarea id="rules-input" class="panel-textarea" placeholder="Ex: 'Responda sempre em tópicos curtos'"></textarea>
       </div>
 
       <div class="panel-section">
@@ -185,7 +131,7 @@
             <span class="slider"></span>
           </label>
         </div>
-        <textarea id="memory-input" class="panel-textarea" placeholder="Ex: 'Sou estudante de Zootecnia e moro em Boa Viagem/CE', 'Trabalho com manutenção de computadores'"></textarea>
+        <textarea id="memory-input" class="panel-textarea" placeholder="Ex: 'Moro em Boa Viagem/CE'"></textarea>
       </div>
       <button class="save-settings-btn" onclick="saveSettings(true)">Salvar Alterações</button>
     </div>
@@ -207,7 +153,6 @@
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
 
-    // Carrega dados salvos no navegador ao iniciar a página
     window.onload = function() {
       document.getElementById('rules-input').value = localStorage.getItem('teca_rules') || '';
       document.getElementById('memory-input').value = localStorage.getItem('teca_memory') || '';
@@ -254,7 +199,6 @@
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
-      // Coleta os dados de personalização se as chaves estiverem ativadas
       const customInstructions = document.getElementById('rules-toggle').checked ? localStorage.getItem('teca_rules') : '';
       const memoryContext = document.getElementById('memory-toggle').checked ? localStorage.getItem('teca_memory') : '';
 
@@ -295,9 +239,9 @@
                 <div class="model-badge">🤖 Filtro 2: DiffusionGemma 26B</div>
                 <div class="model-text">${data.auditoria.gemma}</div>
               </div>
-              <div class="model-card minimax">
-                <div class="model-badge">🤖 Filtro 3: MiniMax M3</div>
-                <div class="model-text">${data.auditoria.minimax}</div>
+              <div class="model-card llama">
+                <div class="model-badge">🤖 Filtro 3: Llama 3.1 8B Instruct</div>
+                <div class="model-text">${data.auditoria.llama8b}</div>
               </div>
             </div>
           `;
