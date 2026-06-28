@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>TecAI - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
@@ -21,9 +21,27 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
 
-    body { background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
+    body { 
+      background-color: var(--bg-color); 
+      color: var(--text-color); 
+      display: flex; 
+      height: 100vh; 
+      overflow: hidden; 
+    }
 
-    #sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px; gap: 16px; }
+    /* BARRA LATERAL (SIDEBAR) - Adaptativa com transição suave */
+    #sidebar {
+      width: 260px;
+      background-color: var(--sidebar-bg);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      padding: 16px;
+      gap: 16px;
+      flex-shrink: 0;
+      transition: transform 0.3s ease;
+      z-index: 1000;
+    }
 
     .new-chat-btn { background: transparent; border: 1px dashed #3f3f46; color: #fff; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; text-align: left; transition: all 0.2s; }
     .new-chat-btn:hover { border-color: var(--accent-color); background: rgba(118, 185, 0, 0.05); }
@@ -38,15 +56,65 @@
     .delete-chat-btn { background: transparent; border: none; color: #71717a; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 4px; }
     .delete-chat-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 
-    #main-content { flex: 1; display: flex; flex-direction: column; height: 100%; background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%); }
+    /* Fundo escuro que aparece no celular ao abrir o menu lateral */
+    #sidebar-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(4px);
+      z-index: 999;
+    }
 
-    header { padding: 16px 20px; text-align: center; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; justify-content: space-between; align-items: center; }
-    header h1 { font-size: 1.4rem; font-weight: 800; color: var(--accent-color); }
+    /* PAINEL DA DIREITA (CONTEÚDO DO CHAT) */
+    #main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%);
+      min-width: 0; /* Impede quebras de layout em flexbox */
+    }
+
+    header { 
+      padding: 16px 20px; 
+      border-bottom: 1px solid var(--border-color); 
+      background: rgba(18, 18, 20, 0.6); 
+      backdrop-filter: blur(12px);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    header h1 { font-size: 1.3rem; font-weight: 800; color: var(--accent-color); white-space: nowrap; }
     
-    .settings-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa; padding: 6px 14px; border-radius: 14px; font-size: 0.8rem; font-weight: 600; cursor: pointer; }
+    /* Botão Hambúrguer para celular */
+    .menu-toggle-btn {
+      display: none;
+      background: #18181b;
+      border: 1px solid var(--border-color);
+      color: #fff;
+      font-size: 1.2rem;
+      padding: 6px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+
+    .settings-toggle-btn {
+      background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa;
+      padding: 8px 14px; border-radius: 14px; font-size: 0.8rem; font-weight: 600;
+      cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
     .settings-toggle-btn:hover { border-color: var(--accent-color); color: #fff; }
 
-    #settings-panel { display: none; position: absolute; top: 70px; right: 20px; z-index: 100; background: #121214; border: 1px solid var(--border-color); max-width: 500px; width: 90%; border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    #settings-panel { 
+      display: none; position: absolute; top: 70px; right: 20px; z-index: 1001; 
+      background: #121214; border: 1px solid var(--border-color); 
+      max-width: 450px; width: calc(100% - 40px); border-radius: 16px; padding: 16px; 
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
+    }
     .panel-section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #1f1f22; }
     .panel-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -60,85 +128,87 @@
     input:checked + .slider:before { transform: translateX(16px); background-color: #fff; }
 
     .panel-textarea { width: 100%; background: #18181b; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; color: #fff; font-size: 0.85rem; resize: vertical; height: 60px; outline: none; }
-    .save-settings-btn { background: #0066ff; color: #fff; border: none; padding: 6px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
+    .save-settings-btn { background: #0066ff; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
 
-    #chat-container { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 20px; }
+    #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
 
-    .message { padding: 16px 20px; border-radius: 20px; max-width: 85%; line-height: 1.6; font-size: 0.98rem; word-wrap: break-word; animation: fadeIn 0.3s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
+    .message { padding: 14px 18px; border-radius: 20px; max-width: 82%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
-    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); }
+    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 85%; }
 
-    .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 16px 0 8px 0; font-size: 1.15rem; font-weight: 700; }
-    .ai-render-content p { margin-bottom: 12px; color: #e4e4e7; }
-    .ai-render-content ul, .ai-render-content ol { margin-left: 20px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 4px; }
+    .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 12px 0 6px 0; font-size: 1.1rem; font-weight: 700; }
+    .ai-render-content p { margin-bottom: 10px; color: #e4e4e7; }
+    .ai-render-content ul, .ai-render-content ol { margin-left: 18px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
     .ai-render-content li { color: #e4e4e7; }
 
-    .system-status { align-self: center; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #a1a1aa; background: #18181b; padding: 6px 16px; border-radius: 20px; border: 1px solid var(--border-color); margin: 0 auto; }
+    .system-status { align-self: center; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #a1a1aa; background: #18181b; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color); text-align: center; }
 
-    .backstage { margin-top: 16px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
-    .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: 600; font-size: 0.85rem; padding: 12px 16px; background: #111113; outline: none; }
-    .backstage-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .backstage { margin-top: 12px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
+    .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: 600; font-size: 0.8rem; padding: 10px 14px; background: #111113; outline: none; }
+    .backstage-content { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
 
-    .model-card { background: #141416; border-radius: 8px; padding: 12px 14px; font-size: 0.88rem; border-left: 4px solid #3f3f46; }
+    .model-card { background: #141416; border-radius: 8px; padding: 10px 12px; font-size: 0.85rem; border-left: 4px solid #3f3f46; overflow-x: auto; }
     .model-card.deepseek { border-left-color: var(--color-deepseek); }
     .model-card.gemma { border-left-color: var(--color-gemma); }
     .model-card.llama { border-left-color: var(--color-llama); }
 
-    .model-badge { font-weight: 700; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 6px; display: inline-block; }
+    .model-badge { font-weight: 700; font-size: 0.7rem; text-transform: uppercase; margin-bottom: 4px; display: inline-block; }
     .deepseek .model-badge { color: var(--color-deepseek); }
     .gemma .model-badge { color: var(--color-gemma); }
     .llama .model-badge { color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
-    #input-container { padding: 24px 20px; width: 100%; display: flex; gap: 12px; align-items: center; }
-    
-    .input-wrapper { 
-      flex: 1; 
-      background-color: var(--chat-bg); 
-      border: 1px solid var(--border-color); 
-      border-radius: 28px; 
-      display: flex;
-      align-items: center;
-      padding: 0 16px 0 6px;
-    }
-    .input-wrapper:focus-within { border-color: var(--accent-color); }
+    #input-container { padding: 16px; width: 100%; display: flex; gap: 10px; align-items: center; background-color: var(--bg-color); }
+    .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; }
+    .web-search-toggle { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.4; filter: grayscale(1); transition: all 0.2s; }
+    .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); }
 
-    .web-search-toggle {
-      background: transparent; border: none; font-size: 1.2rem; cursor: pointer;
-      width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center;
-      justify-content: center; transition: all 0.2s; opacity: 0.4; filter: grayscale(1);
-    }
-    .web-search-toggle.active {
-      opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15);
-      border: 1px solid rgba(0, 102, 255, 0.3);
-    }
+    textarea { flex: 1; background: transparent; border: none; padding: 14px 10px; color: var(--text-color); resize: none; height: 48px; outline: none; font-size: 0.95rem; }
 
-    textarea { flex: 1; background: transparent; border: none; padding: 16px 14px; color: var(--text-color); resize: none; height: 54px; outline: none; font-size: 1rem; }
-
-    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 54px; height: 54px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
-    button#send-btn:hover { transform: scale(1.04); background-color: #8ed01c; }
-    button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
+    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 46px; height: 46px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
+    button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; box-shadow: none; }
 
     .pulse { animation: pulseText 1.5s infinite ease-in-out; color: var(--accent-color); }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
-    ::-webkit-scrollbar { width: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 20px; }
+    
+    /* 🚨 REGRAS DE ADAPTAÇÃO PARA CELULARES E TABLETS (Breakpoints) */
+    @media (max-width: 768px) {
+      .menu-toggle-btn { display: block; } /* Ativa botão hambúrguer */
+      
+      #sidebar {
+        position: fixed;
+        top: 0; bottom: 0; left: 0;
+        transform: translateX(-100%); /* Esconde a barra lateral para a esquerda */
+        width: 260px;
+      }
+      
+      /* Quando o menu lateral estiver aberto */
+      body.sidebar-open #sidebar { transform: translateX(0); }
+      body.sidebar-open #sidebar-overlay { display: block; }
+
+      .message { max-width: 92%; }
+      .ai { max-width: 100%; }
+      header h1 { font-size: 1.1rem; }
+      .settings-toggle-btn { padding: 6px 10px; font-size: 0.75rem; }
+    }
   </style>
 </head>
 <body>
 
+  <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
+
   <div id="sidebar">
-    <button class="new-chat-btn" onclick="criarNovoChat()">➕ Novo chat</button>
+    <button class="new-chat-btn" onclick="criarNovoChat(); fecharSidebarNoCelular();">➕ Novo chat</button>
     <div id="chat-list"></div>
   </div>
 
   <div id="main-content">
     <header>
-      <h1>TecAI</h1>
-      <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Inteligência Personalizada</button>
+      <div class="header-left">
+        <button class="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
+        <h1>TecAI</h1>
+      </div>
+      <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Configurações</button>
       
       <div id="settings-panel">
         <div class="panel-section">
@@ -170,7 +240,7 @@
 
     <div id="input-container">
       <div class="input-wrapper">
-        <button id="web-toggle-btn" class="web-search-toggle" onclick="toggleWebSearch()" title="Ativar Pesquisa na Internet (2026)">🌐</button>
+        <button id="web-toggle-btn" class="web-search-toggle" onclick="toggleWebSearch()" title="Ativar Pesquisa na Internet">🌐</button>
         <textarea id="user-input" placeholder="Faça uma pergunta para as IAs..." rows="1"></textarea>
       </div>
       <button id="send-btn" onclick="enviarPergunta()">➜</button>
@@ -210,6 +280,15 @@
       }
     };
 
+    // FUNÇÕES DE RESPONSIVIDADE INTERATIVA
+    function toggleSidebar() {
+      document.body.classList.toggle('sidebar-open');
+    }
+
+    function fecharSidebarNoCelular() {
+      document.body.classList.remove('sidebar-open');
+    }
+
     function toggleWebSearch() {
       pesquisaWebAtiva = !pesquisaWebAtiva;
       localStorage.setItem('teca_web_search', pesquisaWebAtiva);
@@ -246,6 +325,7 @@
           }
         });
       }
+      fecharSidebarNoCelular(); // Fecha a gaveta no mobile ao selecionar um chat
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
@@ -312,7 +392,7 @@
       adicionarMensagemDiv(texto, 'user');
       
       if (chatCorrente.messages.length === 0) {
-        chatCorrente.title = texto.length > 22 ? texto.substring(0, 22) + '...' : texto;
+        chatCorrente.title = texto.length > 20 ? texto.substring(0, 20) + '...' : texto;
         renderizarBarraLateral();
       }
 
@@ -321,7 +401,7 @@
 
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'message ai pulse';
-      loadingDiv.innerText = pesquisaWebAtiva ? 'Vasculhando a internet por dados recentes...' : 'Pensando e avaliando as respostas...';
+      loadingDiv.innerText = pesquisaWebAtiva ? 'Vasculhando a internet...' : 'Pensando e avaliando...';
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -346,7 +426,7 @@
         if (data.error) {
           chatCorrente.messages.pop();
           salvarChatsNoNavegador();
-          adicionarMensagemDiv('Ops! Tive um problema ao consultar as IAs. Detalhe: ' + data.error, 'ai');
+          adicionarMensagemDiv('Ops! Problema ao consultar as IAs. Detalhe: ' + data.error, 'ai');
         } else {
           chatCorrente.messages.push({ 
             role: 'assistant', 
@@ -433,7 +513,7 @@
       localStorage.setItem('teca_rules_enabled', document.getElementById('rules-toggle').checked);
       localStorage.setItem('teca_memory_enabled', document.getElementById('memory-toggle').checked);
       if(alertUser) {
-        alert('Configurações de personalização salvas com sucesso!');
+        alert('Configurações de personalização salvas!');
         toggleSettingsPanel();
       }
     }
