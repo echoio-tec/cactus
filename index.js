@@ -11,36 +11,33 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 45000 // Aumentado para 45s para dar tempo da busca web + respostas
+  timeout: 45000 
 });
 
-// FUNÇÃO DE OURO: Busca na internet em tempo real sem precisar de chaves pagas
 async function buscarNaWeb(query) {
   try {
     console.log(`[WebSearch] Pesquisando na internet por: "${query}"`);
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     
     const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
     });
     
-    if (!response.ok) throw new Error('Falha na resposta da rede');
+    if (!response.ok) throw new Error('Bloqueio de rede ou timeout');
     const html = await response.text();
     
-    // Captura os snippets de resultados reais da página do DuckDuckGo
     const matches = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)];
     const trechos = matches.slice(0, 3).map(m => m[1].replace(/<[^>]*>/g, '').trim());
     
-    if (trechos.length === 0) return "Nenhum resultado recente encontrado na busca rápida.";
+    if (trechos.length === 0) return "Aviso: O buscador não retornou resultados válidos (Pode ter ocorrido um bloqueio por CAPTCHA no Render).";
     return trechos.join('\n\n');
   } catch (err) {
     console.error('Erro ao realizar busca web:', err);
-    return 'Não foi possível obter dados da internet para esta consulta.';
+    return `Erro na busca: ${err.message}`;
   }
 }
 
 app.post('/api/perguntar', async (req, res) => {
-  // Recebemos a chave 'pesquisaWeb' vinda do botão da interface
   const { historico, customInstructions, memoryContext, pesquisaWeb } = req.body;
 
   if (!historico || historico.length === 0) {
@@ -48,6 +45,7 @@ app.post('/api/perguntar', async (req, res) => {
   }
 
   const ultimaPergunta = historico[historico.length - 1].content;
+  let dadosInternet = "Pesquisa na Internet desativada para esta rodada.";
 
   try {
     const mensagensSistema = [];
@@ -60,80 +58,56 @@ app.post('/api/perguntar', async (req, res) => {
       mensagensSistema.push({ role: "system", content: `Instruções de estilo: ${customInstructions}` });
     }
 
-    // SE A PESQUISA WEB ESTIVER ATIVA: Intercepta o fluxo e busca os fatos de 2026
     if (pesquisaWeb) {
-      const dadosInternet = await buscarNaWeb(ultimaPergunta);
+      dadosInternet = await buscarNaWeb(ultimaPergunta);
       mensagensSistema.push({ 
         role: "system", 
-        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO ATUAL: 2026):\nUse as seguintes informações coletadas da web em tempo real para responder com total precisão a fatos recentes:\n${dadosInternet}` 
+        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO ATUAL: 2026):\nUse as seguintes informações coletadas da web em tempo real para responder:\n${dadosInternet}` 
       });
     }
 
     const promptFinalModelos = [...mensagensSistema, ...historico];
 
-    // 1. Executando os competidores com o contexto enriquecido da internet
     const [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
-      nvidia.chat.completions.create({
-        model: "deepseek-ai/deepseek-v4-flash",
-        messages: promptFinalModelos
-      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
-
-      nvidia.chat.completions.create({
-        model: "google/diffusiongemma-26b-a4b-it",
-        messages: promptFinalModelos
-      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
-
-      nvidia.chat.completions.create({
-        model: "meta/llama-3.1-8b-instruct",
-        messages: promptFinalModelos
-      }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' }))
+      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
+      nvidia.chat.completions.create({ model: "google/diffusiongemma-26b-a4b-it", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
+      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message }))
     ]);
 
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
     const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // 2. O Juiz decide a melhor resposta considerando o cumprimento das informações atualizadas
     const promptJuiz = `
-Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
-Analise a última pergunta do usuário dentro do contexto recente da conversa e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
+Você é um avaliador rigoroso de IA. Escolha qual das três opções fornecidas é a melhor e mais precisa.
+Retorne APENAS o texto da melhor opção escolhida, sem adendos.
 
-Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida, sem adendos.
+Última Pergunta: "${ultimaPergunta}"
 
-Última Pergunta do Usuário: "${ultimaPergunta}"
-
-Opção 1 (DeepSeek):
-${respostaDeepSeek}
-
-Opção 2 (Gemma):
-${respostaGemma}
-
-Opção 3 (Llama 8B):
-${respostaLlama8b}
+Opção 1: ${respostaDeepSeek}
+Opção 2: ${respostaGemma}
+Opção 3: ${respostaLlama8b}
     `;
 
     const llamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
-    }).catch(err => ({ error: true, message: err.message || 'Erro no Juiz' }));
+    }).catch(err => ({ error: true, message: err.message }));
 
-    if (llamadaJuiz.error) {
-      return res.status(502).json({ 
-        error: `O Juiz falhou. Motivo: ${llamadaJuiz.message}`,
-        auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, llama8b: respostaLlama8b }
-      });
-    }
-
-    const respostaVencedora = llamadaJuiz.choices?.[0]?.message?.content || "Erro ao extrair resposta.";
+    const respostaVencedora = llamadaJuiz.error ? respostaDeepSeek : llamadaJuiz.choices?.[0]?.message?.content;
 
     res.json({
       respostaFinal: respostaVencedora,
-      auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, llama8b: respostaLlama8b }
+      auditoria: { 
+        deepseek: respostaDeepSeek, 
+        gemma: respostaGemma, 
+        llama8b: respostaLlama8b,
+        webRaw: dadosInternet // Injetado com sucesso para visualização do front
+      }
     });
 
   } catch (error) {
-    console.error('Erro inesperado:', error);
-    res.status(500).json({ error: `Erro interno: ${error.message}` });
+    res.status(500).json({ error: error.message });
   }
 });
 
