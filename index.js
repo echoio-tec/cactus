@@ -15,7 +15,6 @@ const nvidia = new OpenAI({
 });
 
 app.post('/api/perguntar', async (req, res) => {
-  // Recebe a pergunta, as regras e a memória vindas do front-end
   const { pergunta, customInstructions, memoryContext } = req.body;
 
   if (!pergunta) {
@@ -23,30 +22,28 @@ app.post('/api/perguntar', async (req, res) => {
   }
 
   try {
-    console.log(`[TecAI] Nova rodada personalizada iniciada para: "${pergunta}"`);
+    console.log(`[TecAI] Nova rodada estável iniciada para: "${pergunta}"`);
 
-    // Construindo as mensagens do sistema com base na personalização ativada
     const mensagensSistema = [];
     
     if (memoryContext) {
       mensagensSistema.push({ 
         role: "system", 
-        content: `Memória/Contexto sobre o usuário (considere isso em suas respostas): ${memoryContext}` 
+        content: `Memória/Contexto sobre o usuário: ${memoryContext}` 
       });
     }
     
     if (customInstructions) {
       mensagensSistema.push({ 
         role: "system", 
-        content: `Instruções estritas de comportamento/estilo do usuário: ${customInstructions}` 
+        content: `Instruções estritas de comportamento/estilo: ${customInstructions}` 
       });
     }
 
-    // Injeta o histórico de contexto antes da pergunta do usuário
     const promptFinalModelos = [...mensagensSistema, { role: "user", content: pergunta }];
 
-    // 1. Executando os 3 competidores em paralelo com as diretrizes personalizadas
-    const [chamadaDeepSeek, chamadaGemma, chamadaMiniMax] = await Promise.all([
+    // 1. Três competidores rápidos e estáveis rodando em paralelo
+    const [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
         messages: promptFinalModelos
@@ -58,16 +55,16 @@ app.post('/api/perguntar', async (req, res) => {
       }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
 
       nvidia.chat.completions.create({
-        model: "minimaxai/minimax-m3",
+        model: "meta/llama-3.1-8b-instruct", // Nova IA adicionada aqui!
         messages: promptFinalModelos
       }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' }))
     ]);
 
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
-    const respostaMiniMax = chamadaMiniMax.error ? `Erro: ${chamadaMiniMax.message}` : (chamadaMiniMax.choices?.[0]?.message?.content || "Vazio.");
+    const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // 2. Montando o Ringue de Avaliação. O Juiz DEVE saber quais eram as regras do usuário!
+    // 2. Montando o Ringue de Avaliação para o Juiz 70B
     const promptJuiz = `
 Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
 Analise a pergunta original do usuário e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
@@ -84,30 +81,29 @@ ${respostaDeepSeek}
 Opção 2 (Gemma):
 ${respostaGemma}
 
-Opção 3 (MiniMax):
-${respostaMiniMax}
+Opção 3 (Llama 8B):
+${respostaLlama8b}
 
 Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida, sem adendos.
     `;
 
-    // 3. O Juiz decide levando as regras em conta
-    const chamadaJuiz = await nvidia.chat.completions.create({
+    const llamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(err => ({ error: true, message: err.message || 'Erro no Juiz' }));
 
-    if (chamadaJuiz.error) {
+    if (llamadaJuiz.error) {
       return res.status(502).json({ 
-        error: `O Juiz falhou. Motivo: ${chamadaJuiz.message}`,
-        auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, minimax: respostaMiniMax }
+        error: `O Juiz falhou. Motivo: ${llamadaJuiz.message}`,
+        auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, llama8b: respostaLlama8b }
       });
     }
 
-    const respostaVencedora = chamadaJuiz.choices?.[0]?.message?.content || "Erro ao extrair resposta.";
+    const respostaVencedora = llamadaJuiz.choices?.[0]?.message?.content || "Erro ao extrair resposta.";
 
     res.json({
       respostaFinal: respostaVencedora,
-      auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, minimax: respostaMiniMax }
+      auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma, llama8b: respostaLlama8b }
     });
 
   } catch (error) {
