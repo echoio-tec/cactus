@@ -1,0 +1,15 @@
+{
+  "name": "tecai",
+  "version": "1.0.0",
+  "description": "Agregador de IA usando NVIDIA Build, Render e Supabase",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.44.1",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "openai": "^4.52.3"
+  }
+}
