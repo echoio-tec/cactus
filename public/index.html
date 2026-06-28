@@ -9,7 +9,7 @@
       --bg-color: #131314;
       --chat-bg: #1e1e20;
       --text-color: #e3e3e3;
-      --accent-color: #76b900; /* Verde NVIDIA para dar um estilo profissional */
+      --accent-color: #76b900; 
       --user-msg: #2b2c2e;
     }
 
@@ -29,7 +29,6 @@
 
     .system-status { align-self: center; font-size: 0.8rem; color: #80868b; background: #202124; padding: 6px 12px; border-radius: 12px; }
 
-    /* Estilo dos Bastidores (Auditoria) */
     .backstage { margin-top: 10px; padding: 10px; background: #111; border-radius: 8px; font-size: 0.8rem; border: 1px solid #333; }
     .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: bold; outline: none; }
     .backstage-content { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
@@ -42,7 +41,6 @@
     button:hover { transform: scale(1.05); background-color: #8ed01c; }
     button:disabled { background-color: #3c4043; cursor: not-allowed; transform: none; }
 
-    /* Scrollbar customizável */
     ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-track { background: var(--bg-color); }
     ::-webkit-scrollbar-thumb { background: #3c4043; border-radius: 4px; }
@@ -56,7 +54,7 @@
   </header>
 
   <div id="chat-container">
-    <div class="system-status">Modo de fusão ativado: DeepSeek v4 & Gemma 26B</div>
+    <div class="system-status">Modo de batalha tripla ativado: DeepSeek, Gemma & MiniMax</div>
   </div>
 
   <div id="input-container">
@@ -69,7 +67,6 @@
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
 
-    // Permite enviar com a tecla Enter (sem Shift)
     userInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -81,19 +78,14 @@
       const texto = userInput.value.trim();
       if (!texto) return;
 
-      // Limpa input e desabilita o envio temporariamente
       userInput.value = '';
       userInput.disabled = true;
       sendBtn.disabled = true;
 
-      // Adiciona mensagem do usuário na tela
       adicionarMensagem(texto, 'user');
-
-      // Adiciona um balão de carregamento para a IA
       const loadingDiv = adicionarMensagem('Pensando e avaliando as respostas...', 'ai');
 
       try {
-        // Faz a chamada para a nossa API no Render (usando rota relativa)
         const response = await fetch('/api/perguntar', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -101,19 +93,15 @@
         });
 
         const data = await response.json();
-
-        // Remove a mensagem de carregamento
         loadingDiv.remove();
 
         if (data.error) {
-          adicionarMensagem('Ops! Tive um problema ao consultar as IAs da NVIDIA. Detalhe: ' + data.error, 'ai');
+          adicionarMensagem('Ops! Tive um problema ao consultar as IAs. Detalhe: ' + data.error, 'ai');
         } else {
-          // Exibe a resposta vencedora escolhida pelo juiz
           const msgConteudo = document.createElement('div');
           msgConteudo.className = 'message ai';
           msgConteudo.innerText = data.respostaFinal;
 
-          // Adiciona os bastidores (o que cada uma respondeu individualmente)
           const detalhes = document.createElement('details');
           detalhes.className = 'backstage';
           detalhes.innerHTML = `
@@ -122,6 +110,8 @@
               <p><strong>Filtro 1 (DeepSeek-v4-Flash):</strong> ${data.auditoria.deepseek}</p>
               <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
               <p><strong>Filtro 2 (DiffusionGemma-26B):</strong> ${data.auditoria.gemma}</p>
+              <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
+              <p><strong>Filtro 3 (MiniMax-M3):</strong> ${data.auditoria.minimax}</p>
             </div>
           `;
           msgConteudo.appendChild(detalhes);
@@ -134,7 +124,6 @@
         console.error(error);
       }
 
-      // Reativa os campos
       userInput.disabled = false;
       sendBtn.disabled = false;
       userInput.focus();
