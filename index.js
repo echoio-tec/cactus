@@ -29,7 +29,7 @@ async function buscarNaWeb(query) {
       body: JSON.stringify({
         api_key: process.env.TAVILY_API_KEY,
         query: query,
-        search_depth: "basic",
+        search_depth: "advanced",
         max_results: 3
       })
     });
