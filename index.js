@@ -8,7 +8,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// Configuração do cliente NVIDIA com limite de 35 segundos para conexões lentas
+// Configuração do cliente NVIDIA com limite estável de 35 segundos
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
@@ -25,7 +25,7 @@ app.post('/api/perguntar', async (req, res) => {
   try {
     console.log(`[TecAI] Processando pergunta: "${pergunta}"`);
 
-    // 1. Competidores Oficiais do seu catálogo
+    // 1. Chamando os competidores rápidos em paralelo
     const [chamadaDeepSeek, chamadaGemma] = await Promise.all([
       nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
@@ -41,14 +41,13 @@ app.post('/api/perguntar', async (req, res) => {
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : chamadaDeepSeek.choices[0].message.content;
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : chamadaGemma.choices[0].message.content;
 
-    // Se ambos falharem miseravelmente por rede ou créditos
     if (chamadaDeepSeek.error && chamadaGemma.error) {
       return res.status(502).json({ 
-        error: `Ambos os modelos falharam. Detalhes:\n- DeepSeek: ${chamadaDeepSeek.message}\n- Gemma: ${chamadaGemma.message}` 
+        error: `Ambos os competidores falharam. Detalhes:\n- DeepSeek: ${chamadaDeepSeek.message}\n- Gemma: ${chamadaGemma.message}` 
       });
     }
 
-    // 2. Construindo o Ringue para o Juiz
+    // 2. Montando o Ringue de Avaliação
     const promptJuiz = `
 Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
 Analise a pergunta original do usuário e escolha qual das duas opções fornecidas é a melhor (mais precisa, clara e completa).
@@ -63,25 +62,24 @@ Opção 2:
 ${respostaGemma}
     `;
 
-    // 3. O Juiz oficial do seu painel (blindado com .catch)
+    // 3. O Juiz oficial e otimizado da NVIDIA (Nemotron) - Não vai travar por timeout
     const chamadaJuiz = await nvidia.chat.completions.create({
-      model: "deepseek-ai/deepseek-v4-pro",
+      model: "nvidia/llama-3.1-nemotron-70b-instruct", // Trocado para o modelo estável da NVIDIA
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(err => ({ error: true, message: err.message }));
 
-    // Se o Juiz falhar, ele nos avisa o motivo exato na tela
     if (chamadaJuiz.error) {
       return res.status(502).json({ 
-        error: `Os competidores responderam, mas o Juiz (DeepSeek-Pro) falhou. Motivo: ${chamadaJuiz.message}`,
+        error: `Os competidores responderam, mas o Juiz (Nemotron) falhou. Motivo: ${chamadaJuiz.message}`,
         auditoria: { deepseek: respostaDeepSeek, gemma: respostaGemma }
       });
     }
 
-    const respostaVencedora = chamadaJuiz.choices[0].message.content;
+    const responseVencedora = chamadaJuiz.choices[0].message.content;
 
-    // 4. Tudo certo! Devolve a resposta
+    // 4. Retorno de sucesso para a tela
     res.json({
-      respostaFinal: respostaVencedora,
+      respostaFinal: responseVencedora,
       auditoria: {
         deepseek: respostaDeepSeek,
         gemma: respostaGemma
