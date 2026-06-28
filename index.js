@@ -4,86 +4,85 @@ const { OpenAI } = require('openai');
 
 const app = express();
 
-// Configurações básicas do servidor
 app.use(cors());
 app.use(express.json());
-
-// Entrega os arquivos da pasta 'public' (seu HTML/Interface) automaticamente
 app.use(express.static('public'));
 
-// Configuração do cliente NVIDIA usando a estrutura da OpenAI
+// Configuração do cliente NVIDIA com um teto de 30 segundos para evitar travamentos
 const nvidia = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY, // Chave configurada de forma segura no Render
-  baseURL: 'https://integrate.api.nvidia.com/v1'
+  apiKey: process.env.NVIDIA_API_KEY,
+  baseURL: 'https://integrate.api.nvidia.com/v1',
+  timeout: 30000 // 30 segundos de limite máximo
 });
 
-// Rota principal que o seu site vai chamar ao enviar uma pergunta
 app.post('/api/perguntar', async (req, res) => {
   const { pergunta } = req.body;
 
-  // Validação para garantir que a pergunta chegou corretamente
   if (!pergunta) {
     return res.status(400).json({ error: 'Por favor, forneça uma pergunta.' });
   }
 
   try {
-    console.log(`Nova pergunta recebida: "${pergunta}"`);
+    console.log(`Disparando busca para os modelos estáveis: "${pergunta}"`);
 
-    // 1. Disparando chamadas em paralelo para os modelos da NVIDIA
-    const [chamadaDeepSeek, llamadaGemma] = await Promise.all([
+    // 1. Competidores estáveis e rápidos (Llama da Meta)
+    const [chamadaLlama8b, chamadaLlama70b] = await Promise.all([
       nvidia.chat.completions.create({
-        model: "deepseek-ai/deepseek-v4-flash",
+        model: "meta/llama-3.1-8b-instruct", // Ultra rápido
         messages: [{ role: "user", content: pergunta }]
       }).catch(err => ({ error: true, message: err.message })),
 
       nvidia.chat.completions.create({
-        model: "google/diffusiongemma-26b-a4b-it",
+        model: "meta/llama-3.1-70b-instruct", // Muito inteligente e estável
         messages: [{ role: "user", content: pergunta }]
       }).catch(err => ({ error: true, message: err.message }))
     ]);
 
-    const respostaDeepSeek = chamadaDeepSeek.error ? "Erro ao carregar DeepSeek" : chamadaDeepSeek.choices[0].message.content;
-    const respostaGemma = llamadaGemma.error ? "Erro ao carregar Gemma" : llamadaGemma.choices[0].message.content;
+    const respostaLlama8b = chamadaLlama8b.error ? "Erro no modelo Llama-8B" : chamadaLlama8b.choices[0].message.content;
+    const respostaLlama70b = chamadaLlama70b.error ? "Erro no modelo Llama-70B" : chamadaLlama70b.choices[0].message.content;
 
-    // 2. Construindo o prompt para a IA Juíza avaliar as respostas
+    // Se ambos falharem por timeout ou rede
+    if (chamadaLlama8b.error && chamadaLlama70b.error) {
+      return res.status(504).json({ error: 'Os modelos da NVIDIA demoraram demais para responder. Tente novamente em instantes.' });
+    }
+
+    // 2. O Prompt do Juiz
     const promptJuiz = `
-Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
-Analise a pergunta original do usuário e escolha qual das duas opções fornecidas é a melhor (mais precisa, clara e completa).
-Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida. Não adicione saudações, explicações ou justificativas.
+Você é um avaliador rigoroso de Inteligência Artificial.
+Analise a pergunta do usuário e escolha qual das duas opções é a melhor.
+Retorne APENAS o texto exato da resposta escolhida. Sem comentários.
 
-Pergunta do Usuário: "${pergunta}"
+Pergunta: "${pergunta}"
 
 Opção 1:
-${respostaDeepSeek}
+${respostaLlama8b}
 
 Opção 2:
-${respostaGemma}
+${respostaLlama70b}
     `;
 
-    // 3. O modelo Juiz decide a vencedora
+    // 3. O Juiz definitivo da própria NVIDIA (Nemotron)
     const chamadaJuiz = await nvidia.chat.completions.create({
-      model: "deepseek-ai/deepseek-v4-pro",
+      model: "nvidia/llama-3.1-nemotron-70b-instruct", // Modelo oficial da NVIDIA, super estável
       messages: [{ role: "user", content: promptJuiz }]
     });
 
     const respostaVencedora = chamadaJuiz.choices[0].message.content;
 
-    // 4. Devolvemos a melhor resposta para o Frontend junto com a auditoria dos bastidores
     res.json({
       respostaFinal: respostaVencedora,
       auditoria: {
-        deepseek: respostaDeepSeek,
-        gemma: respostaGemma
+        deepseek: respostaLlama8b, // Mantive as chaves do objeto para não precisar mexer no HTML
+        gemma: respostaLlama70b
       }
     });
 
   } catch (error) {
     console.error('Erro geral no processamento:', error);
-    res.status(500).json({ error: 'Erro interno ao consultar os modelos de IA.' });
+    res.status(500).json({ error: 'A API da NVIDIA recusou ou demorou a responder. Verifique seus créditos ou tente novamente.' });
   }
 });
 
-// Define a porta do servidor (o Render configura a porta automaticamente)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor ativo na porta ${PORT}`);
