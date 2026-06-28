@@ -6,51 +6,256 @@
   <title>TecAI - O Agregador Inteligente</title>
   <style>
     :root {
-      --bg-color: #131314;
-      --chat-bg: #1e1e20;
-      --text-color: #e3e3e3;
-      --accent-color: #76b900; 
-      --user-msg: #2b2c2e;
+      --bg-color: #0b0b0c;
+      --chat-bg: #161618;
+      --text-color: #f4f4f5;
+      --accent-color: #76b900; /* Verde NVIDIA */
+      --user-msg: #27272a;
+      --border-color: #27272a;
+      
+      /* Cores das IAs */
+      --color-deepseek: #0066ff;
+      --color-gemma: #a855f7;
+      --color-minimax: #f97316;
     }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+    }
 
-    body { background-color: var(--bg-color); color: var(--text-color); display: flex; flex-direction: column; height: 100vh; }
+    body { 
+      background-color: var(--bg-color); 
+      color: var(--text-color); 
+      display: flex; 
+      flex-direction: column; 
+      height: 100vh;
+      background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%);
+    }
 
-    header { padding: 20px; text-align: center; border-bottom: 1px solid #2d2d30; background: #1a1a1c; }
-    header h1 { font-size: 1.5rem; color: var(--accent-color); }
-    header p { font-size: 0.85rem; color: #9aa0a6; margin-top: 4px; }
+    header { 
+      padding: 24px 20px; 
+      text-align: center; 
+      border-bottom: 1px solid var(--border-color); 
+      background: rgba(18, 18, 20, 0.6); 
+      backdrop-filter: blur(12px);
+    }
+    header h1 { 
+      font-size: 1.8rem; 
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--accent-color); 
+      text-shadow: 0 0 20px rgba(118, 185, 0, 0.2);
+    }
+    header p { 
+      font-size: 0.85rem; 
+      color: #a1a1aa; 
+      margin-top: 6px; 
+    }
 
-    #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; max-width: 800px; width: 100%; margin: 0 auto; }
+    #chat-container { 
+      flex: 1; 
+      overflow-y: auto; 
+      padding: 24px 20px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 20px; 
+      max-width: 850px; 
+      width: 100%; 
+      margin: 0 auto; 
+    }
 
-    .message { padding: 14px 18px; border-radius: 18px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
-    .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; }
-    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border-left: 4px solid var(--accent-color); }
+    .message { 
+      padding: 16px 20px; 
+      border-radius: 20px; 
+      max-width: 85%; 
+      line-height: 1.6; 
+      font-size: 0.98rem; 
+      word-wrap: break-word;
+      animation: fadeIn 0.3s ease-out;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
-    .system-status { align-self: center; font-size: 0.8rem; color: #80868b; background: #202124; padding: 6px 12px; border-radius: 12px; }
+    .user { 
+      background-color: var(--user-msg); 
+      align-self: flex-end; 
+      border-bottom-right-radius: 4px; 
+      color: #fff;
+    }
+    .ai { 
+      background-color: var(--chat-bg); 
+      align-self: flex-start; 
+      border-bottom-left-radius: 4px; 
+      border: 1px solid var(--border-color);
+    }
 
-    .backstage { margin-top: 10px; padding: 10px; background: #111; border-radius: 8px; font-size: 0.8rem; border: 1px solid #333; }
-    .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: bold; outline: none; }
-    .backstage-content { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .system-status { 
+      align-self: center; 
+      font-size: 0.75rem; 
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #a1a1aa; 
+      background: #18181b; 
+      padding: 6px 16px; 
+      border-radius: 20px; 
+      border: 1px solid var(--border-color);
+    }
 
-    #input-container { padding: 20px; max-width: 800px; width: 100%; margin: 0 auto; display: flex; gap: 10px; background-color: var(--bg-color); }
-    textarea { flex: 1; background-color: var(--chat-bg); border: 1px solid #3c4043; border-radius: 24px; padding: 14px 20px; color: var(--text-color); resize: none; height: 52px; outline: none; font-size: 0.95rem; }
-    textarea:focus { border-color: var(--accent-color); }
+    /* Estilização Premium dos Bastidores */
+    .backstage { 
+      margin-top: 16px; 
+      background: #09090b; 
+      border-radius: 12px; 
+      border: 1px solid var(--border-color); 
+      overflow: hidden;
+    }
+    .backstage summary { 
+      cursor: pointer; 
+      color: var(--accent-color); 
+      font-weight: 600; 
+      font-size: 0.85rem;
+      padding: 12px 16px;
+      background: #111113;
+      outline: none; 
+      user-select: none;
+      transition: background 0.2s;
+    }
+    .backstage summary:hover {
+      background: #161619;
+    }
+    .backstage-content { 
+      padding: 16px; 
+      display: flex; 
+      flex-direction: column; 
+      gap: 12px; 
+    }
 
-    button { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 52px; height: 52px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; transition: transform 0.1s; }
-    button:hover { transform: scale(1.05); background-color: #8ed01c; }
-    button:disabled { background-color: #3c4043; cursor: not-allowed; transform: none; }
+    /* Cards Individuais das IAs nos Bastidores */
+    .model-card {
+      background: #141416;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.88rem;
+      border-left: 4px solid #3f3f46;
+    }
+    .model-card.deepseek { border-left-color: var(--color-deepseek); }
+    .model-card.gemma { border-left-color: var(--color-gemma); }
+    .model-card.minimax { border-left-color: var(--color-minimax); }
 
-    ::-webkit-scrollbar { width: 8px; }
-    ::-webkit-scrollbar-track { background: var(--bg-color); }
-    ::-webkit-scrollbar-thumb { background: #3c4043; border-radius: 4px; }
+    .model-badge {
+      font-weight: 700;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+      display: inline-block;
+    }
+    .deepseek .model-badge { color: var(--color-deepseek); }
+    .gemma .model-badge { color: var(--color-gemma); }
+    .minimax .model-badge { color: var(--color-minimax); }
+    
+    .model-text {
+      color: #d4d4d8;
+      white-space: pre-line;
+    }
+
+    /* Container de Input */
+    #input-container { 
+      padding: 24px 20px; 
+      max-width: 850px; 
+      width: 100%; 
+      margin: 0 auto; 
+      display: flex; 
+      gap: 12px; 
+      align-items: center;
+      background-color: transparent; 
+    }
+    
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+      background-color: var(--chat-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 28px;
+      transition: focus-within 0.2s, box-shadow 0.2s;
+    }
+    .input-wrapper:focus-within {
+      border-color: var(--accent-color);
+      box-shadow: 0 0 16px rgba(118, 185, 0, 0.15);
+    }
+
+    textarea { 
+      width: 100%;
+      background: transparent;
+      border: none;
+      padding: 16px 24px; 
+      color: var(--text-color); 
+      resize: none; 
+      height: 54px; 
+      outline: none; 
+      font-size: 1rem; 
+      line-height: 1.4;
+    }
+
+    button { 
+      background-color: var(--accent-color); 
+      color: #000; 
+      border: none; 
+      border-radius: 50%; 
+      width: 54px; 
+      height: 54px; 
+      cursor: pointer; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      font-size: 1.2rem;
+      transition: transform 0.2s, background-color 0.2s, box-shadow 0.2s; 
+      box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2);
+    }
+    button:hover { 
+      transform: scale(1.04); 
+      background-color: #8ed01c; 
+      box-shadow: 0 4px 20px rgba(118, 185, 0, 0.4);
+    }
+    button:disabled { 
+      background-color: #27272a; 
+      color: #71717a;
+      cursor: not-allowed; 
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Animação de Carregamento Pulsante */
+    .pulse {
+      animation: pulseText 1.5s infinite ease-in-out;
+      color: var(--accent-color);
+      font-weight: 500;
+    }
+    @keyframes pulseText {
+      0% { opacity: 0.6; }
+      50% { opacity: 1; }
+      100% { opacity: 0.6; }
+    }
+
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 20px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
   </style>
 </head>
 <body>
 
   <header>
     <h1>TecAI</h1>
-    <p>Os modelos da NVIDIA competem. O "Juiz" escolhe a melhor resposta.</p>
+    <p>Os modelos da NVIDIA competem. O Llama 3.1 70B escolhe a melhor resposta.</p>
   </header>
 
   <div id="chat-container">
@@ -58,7 +263,9 @@
   </div>
 
   <div id="input-container">
-    <textarea id="user-input" placeholder="Faça uma pergunta para as IAs..." rows="1"></textarea>
+    <div class="input-wrapper">
+      <textarea id="user-input" placeholder="Faça uma pergunta para as IAs..." rows="1"></textarea>
+    </div>
     <button id="send-btn" onclick="enviarPergunta()">➜</button>
   </div>
 
@@ -83,7 +290,13 @@
       sendBtn.disabled = true;
 
       adicionarMensagem(texto, 'user');
-      const loadingDiv = adicionarMensagem('Pensando e avaliando as respostas...', 'ai');
+      
+      // Cria o balão de carregamento com classe pulsante
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'message ai pulse';
+      loadingDiv.innerText = 'Pensando e avaliando as respostas...';
+      chatContainer.appendChild(loadingDiv);
+      chatContainer.scrollTop = chatContainer.scrollHeight;
 
       try {
         const response = await fetch('/api/perguntar', {
@@ -100,18 +313,30 @@
         } else {
           const msgConteudo = document.createElement('div');
           msgConteudo.className = 'message ai';
-          msgConteudo.innerText = data.respostaFinal;
+          
+          // Texto da resposta final vencedora
+          const textoFinal = document.createElement('div');
+          textoFinal.innerText = data.respostaFinal;
+          msgConteudo.appendChild(textoFinal);
 
+          // Estrutura premium dos bastidores em cards individuais
           const detalhes = document.createElement('details');
           detalhes.className = 'backstage';
           detalhes.innerHTML = `
             <summary>🔍 Ver os bastidores da decisão</summary>
             <div class="backstage-content">
-              <p><strong>Filtro 1 (DeepSeek-v4-Flash):</strong> ${data.auditoria.deepseek}</p>
-              <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
-              <p><strong>Filtro 2 (DiffusionGemma-26B):</strong> ${data.auditoria.gemma}</p>
-              <hr style="border: 0; border-top: 1px solid #222; margin: 4px 0;">
-              <p><strong>Filtro 3 (MiniMax-M3):</strong> ${data.auditoria.minimax}</p>
+              <div class="model-card deepseek">
+                <div class="model-badge">🤖 Filtro 1: DeepSeek v4 Flash</div>
+                <div class="model-text">${data.auditoria.deepseek}</div>
+              </div>
+              <div class="model-card gemma">
+                <div class="model-badge">🤖 Filtro 2: DiffusionGemma 26B</div>
+                <div class="model-text">${data.auditoria.gemma}</div>
+              </div>
+              <div class="model-card minimax">
+                <div class="model-badge">🤖 Filtro 3: MiniMax M3</div>
+                <div class="model-text">${data.auditoria.minimax}</div>
+              </div>
             </div>
           `;
           msgConteudo.appendChild(detalhes);
