@@ -26,10 +26,11 @@
       color: var(--text-color); 
       display: flex; 
       height: 100vh; 
+      height: 100dvh; /* Altura dinâmica para corrigir o bug do celular */
       overflow: hidden; 
     }
 
-    /* BARRA LATERAL (SIDEBAR) - Adaptativa com transição suave */
+    /* BARRA LATERAL (SIDEBAR) */
     #sidebar {
       width: 260px;
       background-color: var(--sidebar-bg);
@@ -56,7 +57,7 @@
     .delete-chat-btn { background: transparent; border: none; color: #71717a; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 4px; }
     .delete-chat-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 
-    /* Fundo escuro que aparece no celular ao abrir o menu lateral */
+    /* Cortina escura para o menu mobile */
     #sidebar-overlay {
       display: none;
       position: fixed;
@@ -66,18 +67,18 @@
       z-index: 999;
     }
 
-    /* PAINEL DA DIREITA (CONTEÚDO DO CHAT) */
+    /* CONTEÚDO DO CHAT */
     #main-content {
       flex: 1;
       display: flex;
       flex-direction: column;
       height: 100%;
       background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%);
-      min-width: 0; /* Impede quebras de layout em flexbox */
+      min-width: 0; 
     }
 
     header { 
-      padding: 16px 20px; 
+      padding: 14px 16px; 
       border-bottom: 1px solid var(--border-color); 
       background: rgba(18, 18, 20, 0.6); 
       backdrop-filter: blur(12px);
@@ -85,12 +86,12 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
+      flex-shrink: 0; /* Garante que o topo nunca mude de tamanho */
     }
 
     .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    header h1 { font-size: 1.3rem; font-weight: 800; color: var(--accent-color); white-space: nowrap; }
+    header h1 { font-size: 1.2rem; font-weight: 800; color: var(--accent-color); white-space: nowrap; }
     
-    /* Botão Hambúrguer para celular */
     .menu-toggle-btn {
       display: none;
       background: #18181b;
@@ -104,15 +105,14 @@
 
     .settings-toggle-btn {
       background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa;
-      padding: 8px 14px; border-radius: 14px; font-size: 0.8rem; font-weight: 600;
+      padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600;
       cursor: pointer; transition: all 0.2s; white-space: nowrap;
     }
-    .settings-toggle-btn:hover { border-color: var(--accent-color); color: #fff; }
 
     #settings-panel { 
-      display: none; position: absolute; top: 70px; right: 20px; z-index: 1001; 
+      display: none; position: absolute; top: 65px; right: 16px; z-index: 1001; 
       background: #121214; border: 1px solid var(--border-color); 
-      max-width: 450px; width: calc(100% - 40px); border-radius: 16px; padding: 16px; 
+      max-width: 450px; width: calc(100% - 32px); border-radius: 16px; padding: 16px; 
       box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
     }
     .panel-section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #1f1f22; }
@@ -130,18 +130,18 @@
     .panel-textarea { width: 100%; background: #18181b; border: 1px solid var(--border-color); border-radius: 8px; padding: 10px; color: #fff; font-size: 0.85rem; resize: vertical; height: 60px; outline: none; }
     .save-settings-btn { background: #0066ff; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
 
-    #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+    #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
 
-    .message { padding: 14px 18px; border-radius: 20px; max-width: 82%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
+    .message { padding: 12px 16px; border-radius: 20px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
-    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 85%; }
+    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 90%; }
 
     .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 12px 0 6px 0; font-size: 1.1rem; font-weight: 700; }
     .ai-render-content p { margin-bottom: 10px; color: #e4e4e7; }
     .ai-render-content ul, .ai-render-content ol { margin-left: 18px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
     .ai-render-content li { color: #e4e4e7; }
 
-    .system-status { align-self: center; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #a1a1aa; background: #18181b; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color); text-align: center; }
+    .system-status { align-self: center; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: #a1a1aa; background: #18181b; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color); text-align: center; }
 
     .backstage { margin-top: 12px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
     .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: 600; font-size: 0.8rem; padding: 10px 14px; background: #111113; outline: none; }
@@ -151,45 +151,48 @@
     .model-card.deepseek { border-left-color: var(--color-deepseek); }
     .model-card.gemma { border-left-color: var(--color-gemma); }
     .model-card.llama { border-left-color: var(--color-llama); }
-
-    .model-badge { font-weight: 700; font-size: 0.7rem; text-transform: uppercase; margin-bottom: 4px; display: inline-block; }
-    .deepseek .model-badge { color: var(--color-deepseek); }
-    .gemma .model-badge { color: var(--color-gemma); }
-    .llama .model-badge { color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
-    #input-container { padding: 16px; width: 100%; display: flex; gap: 10px; align-items: center; background-color: var(--bg-color); }
-    .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; }
-    .web-search-toggle { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.4; filter: grayscale(1); transition: all 0.2s; }
+    /* CAIXA DE INPUT BLINDADA PARA MOBILE */
+    #input-container { 
+      padding: 12px 16px; 
+      width: 100%; 
+      display: flex; 
+      gap: 10px; 
+      align-items: center; 
+      background-color: var(--bg-color); 
+      flex-shrink: 0; /* IMPEDE QUE A CAIXA ENCOLHA OU SAIA DA TELA */
+    }
+    
+    .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; min-width: 0; }
+    .input-wrapper:focus-within { border-color: var(--accent-color); }
+    .web-search-toggle { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.4; filter: grayscale(1); transition: all 0.2s; flex-shrink: 0; }
     .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); }
 
-    textarea { flex: 1; background: transparent; border: none; padding: 14px 10px; color: var(--text-color); resize: none; height: 48px; outline: none; font-size: 0.95rem; }
+    textarea { flex: 1; background: transparent; border: none; padding: 12px 8px; color: var(--text-color); resize: none; height: 44px; outline: none; font-size: 0.95rem; }
 
-    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 46px; height: 46px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
-    button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; box-shadow: none; }
+    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
+    button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
     .pulse { animation: pulseText 1.5s infinite ease-in-out; color: var(--accent-color); }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
     
-    /* 🚨 REGRAS DE ADAPTAÇÃO PARA CELULARES E TABLETS (Breakpoints) */
+    /* REGRAS DE ADAPTAÇÃO PARA RESOLUÇÕES MENORES */
     @media (max-width: 768px) {
-      .menu-toggle-btn { display: block; } /* Ativa botão hambúrguer */
+      .menu-toggle-btn { display: block; } 
       
       #sidebar {
         position: fixed;
         top: 0; bottom: 0; left: 0;
-        transform: translateX(-100%); /* Esconde a barra lateral para a esquerda */
+        transform: translateX(-100%); 
         width: 260px;
       }
       
-      /* Quando o menu lateral estiver aberto */
       body.sidebar-open #sidebar { transform: translateX(0); }
       body.sidebar-open #sidebar-overlay { display: block; }
 
-      .message { max-width: 92%; }
+      .message { max-width: 90%; }
       .ai { max-width: 100%; }
-      header h1 { font-size: 1.1rem; }
-      .settings-toggle-btn { padding: 6px 10px; font-size: 0.75rem; }
     }
   </style>
 </head>
@@ -280,14 +283,8 @@
       }
     };
 
-    // FUNÇÕES DE RESPONSIVIDADE INTERATIVA
-    function toggleSidebar() {
-      document.body.classList.toggle('sidebar-open');
-    }
-
-    function fecharSidebarNoCelular() {
-      document.body.classList.remove('sidebar-open');
-    }
+    function toggleSidebar() { document.body.classList.toggle('sidebar-open'); }
+    function fecharSidebarNoCelular() { document.body.classList.remove('sidebar-open'); }
 
     function toggleWebSearch() {
       pesquisaWebAtiva = !pesquisaWebAtiva;
@@ -325,7 +322,7 @@
           }
         });
       }
-      fecharSidebarNoCelular(); // Fecha a gaveta no mobile ao selecionar um chat
+      fecharSidebarNoCelular(); 
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
@@ -506,6 +503,15 @@
       const panel = document.getElementById('settings-panel');
       panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     }
+
+    // Fecha as configurações se o usuário clicar fora no mobile
+    document.addEventListener('click', function(event) {
+      const panel = document.getElementById('settings-panel');
+      const btn = document.querySelector('.settings-toggle-btn');
+      if (panel.style.display === 'block' && !panel.contains(event.target) && event.target !== btn) {
+        panel.style.display = 'none';
+      }
+    });
 
     function saveSettings(alertUser = false) {
       localStorage.setItem('teca_rules', document.getElementById('rules-input').value);
