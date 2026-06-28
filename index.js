@@ -14,11 +14,11 @@ const nvidia = new OpenAI({
   timeout: 45000 
 });
 
-// OTIMIZAÇÃO 1: Busca rápida 'basic' para cortar o tempo de resposta pela metade
+// BUSCA WEB VIA TAVILY
 async function buscarNaWeb(query) {
   try {
     if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente.";
-    console.log(`[Tavily API] Busca rápida por: "${query}"`);
+    console.log(`[Cactus-Web] Busca rápida por: "${query}"`);
     
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
@@ -26,13 +26,13 @@ async function buscarNaWeb(query) {
       body: JSON.stringify({
         api_key: process.env.TAVILY_API_KEY,
         query: query,
-        search_depth: "basic", // Alterado para maior velocidade
+        search_depth: "basic", 
         max_results: 3
       })
     });
 
     if (!response.ok) throw new Error(`Erro: ${response.status}`);
-    const data = await response.ok ? await response.json() : {};
+    const data = await response.json();
     return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Sem dados.";
   } catch (err) {
     return `Falha na busca: ${err.message}`;
@@ -49,7 +49,7 @@ app.post('/api/perguntar', async (req, res) => {
   try {
     const mensagensSistema = [];
     if (memoryContext) mensagensSistema.push({ role: "system", content: `Memória usuário: ${memoryContext}` });
-    if (customInstructions) mensagensSistema.push({ role: "system", content: `Estilo: ${customInstructions}` });
+    if (customInstructions) mensagensSistema.push({ role: "system", content: `Estilo do usuário: ${customInstructions}` });
 
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaPergunta);
@@ -61,7 +61,7 @@ app.post('/api/perguntar', async (req, res) => {
 
     const promptFinalModelos = [...mensagensSistema, ...historico];
 
-    // OTIMIZAÇÃO 2: Substituição da Gemma pelo Mixtral-8x7b para eliminar o gargalo de espera paralelo
+    // O ringue de modelos ultra-rápido
     const [chamadaDeepSeek, chamadaMixtral, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
       nvidia.chat.completions.create({ model: "mistralai/mixtral-8x7b-instruct-v0.1", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
@@ -69,11 +69,12 @@ app.post('/api/perguntar', async (req, res) => {
     ]);
 
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
-    const respostaMixtral = chamadaMixtral.error ? `Erro: ${chamralMixtral.message}` : (chamadaMixtral.choices?.[0]?.message?.content || "Vazio.");
+    const respostaMixtral = chamadaMixtral.error ? `Erro: ${chamadaMixtral.message}` : (chamadaMixtral.choices?.[0]?.message?.content || "Vazio.");
     const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
+    // Promp do Juiz atualizado com a marca Cactus
     const promptJuiz = `
-Você é um avaliador rigoroso. Escolha a melhor e mais precisa resposta entre as três opções. Retorne APENAS o texto da escolhida.
+Você é o avaliador oficial do Cactus, um sistema inteligente. Escolha a melhor e mais precisa resposta entre as três opções fornecidas. Retorne APENAS o texto da escolhida, sem adendos.
 Última Pergunta: "${ultimaPergunta}"
 
 Opção 1: ${respostaDeepSeek}
@@ -99,4 +100,4 @@ Opção 3: ${respostaLlama8b}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Servidor ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus] Servidor ativo na porta ${PORT}`));
