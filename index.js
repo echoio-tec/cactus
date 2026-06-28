@@ -4,9 +4,12 @@ const { OpenAI } = require('openai');
 
 const app = express();
 
-// Permite que o seu Frontend acesse o Backend mesmo estando em links diferentes
+// Configurações básicas do servidor
 app.use(cors());
 app.use(express.json());
+
+// FAZ A MÁGICA: Entrega os arquivos da pasta 'public' (seu HTML/Interface) automaticamente
+app.use(express.static('public'));
 
 // Configuração do cliente NVIDIA usando a estrutura da OpenAI
 const nvidia = new OpenAI({
@@ -14,37 +17,30 @@ const nvidia = new OpenAI({
   baseURL: 'https://integrate.api.nvidia.com/v1'
 });
 
-// Rota simples de teste para garantir que o servidor está vivo
-app.get('/', (req, res) => {
-  res.send('Servidor do TecAI está online e rodando com sucesso!');
-});
-
 // Rota principal que o seu site vai chamar ao enviar uma pergunta
 app.post('/api/perguntar', async (req, res) => {
-  const { pergunta } = req.body;
+  const { pregunta } = req.body;
 
-  if (!pergunta) {
+  if (!pregunta) {
     return res.status(400).json({ error: 'Por favor, forneça uma pergunta.' });
   }
 
   try {
-    console.log(`Nova pergunta recebida: "${pergunta}"`);
+    console.log(`Nova pergunta recebida: "${pregunta}"`);
 
     // 1. Disparando chamadas em paralelo para os modelos da NVIDIA
-    // Usamos um bloco .catch em cada uma para que se uma IA falhar, o site não caia
     const [chamadaDeepSeek, chamadaGemma] = await Promise.all([
       nvidia.chat.completions.create({
-        model: "deepseek-ai/deepseek-v4-flash", // Modelo rápido da DeepSeek do seu catálogo
-        messages: [{ role: "user", content: pergunta }]
+        model: "deepseek-ai/deepseek-v4-flash",
+        messages: [{ role: "user", content: pregunta }]
       }).catch(err => ({ error: true, message: err.message })),
 
       nvidia.chat.completions.create({
-        model: "google/diffusiongemma-26b-a4b-it", // Modelo da Google que vimos na sua tela
-        messages: [{ role: "user", content: pergunta }]
+        model: "google/diffusiongemma-26b-a4b-it",
+        messages: [{ role: "user", content: pregunta }]
       }).catch(err => ({ error: true, message: err.message }))
     ]);
 
-    // Extraindo o texto gerado por cada modelo (ou pegando a mensagem de erro se falhou)
     const respostaDeepSeek = chamadaDeepSeek.error ? "Erro ao carregar DeepSeek" : chamadaDeepSeek.choices[0].message.content;
     const respostaGemma = chamadaGemma.error ? "Erro ao carregar Gemma" : chamadaGemma.choices[0].message.content;
 
@@ -54,7 +50,7 @@ Você é um avaliador rigoroso e especialista em respostas de Inteligência Arti
 Analise a pergunta original do usuário e escolha qual das duas opções fornecidas é a melhor (mais precisa, clara e completa).
 Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida. Não adicione saudações, explicações ou justificativas.
 
-Pergunta do Usuário: "${pergunta}"
+Pergunta do Usuário: "${pregunta}"
 
 Opção 1:
 ${respostaDeepSeek}
@@ -63,15 +59,15 @@ Opção 2:
 ${respostaGemma}
     `;
 
-    // 3. O modelo Juiz (um modelo mais robusto e inteligente) decide a vencedora
+    // 3. O modelo Juiz decide a vencedora
     const chamadaJuiz = await nvidia.chat.completions.create({
-      model: "deepseek-ai/deepseek-v4-pro", // Usando a versão Pro para melhor raciocínio crítico
+      model: "deepseek-ai/deepseek-v4-pro",
       messages: [{ role: "user", content: promptJuiz }]
     });
 
     const respostaVencedora = chamadaJuiz.choices[0].message.content;
 
-    // 4. Devolvemos a melhor resposta para o Frontend, além de um histórico das outras se quiser mostrar
+    // 4. Devolvemos a melhor resposta para o Frontend
     res.json({
       respostaFinal: respostaVencedora,
       auditoria: {
@@ -86,7 +82,7 @@ ${respostaGemma}
   }
 });
 
-// Define a porta do servidor (o Render define isso automaticamente)
+// Define a porta do servidor
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor ativo na porta ${PORT}`);
