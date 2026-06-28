@@ -15,14 +15,18 @@ const nvidia = new OpenAI({
 });
 
 app.post('/api/perguntar', async (req, res) => {
-  const { pergunta, customInstructions, memoryContext } = req.body;
+  // Agora recebemos o array completo de mensagens do histórico
+  const { historico, customInstructions, memoryContext } = req.body;
 
-  if (!pergunta) {
-    return res.status(400).json({ error: 'Por favor, forneça uma pergunta.' });
+  if (!historico || historico.length === 0) {
+    return res.status(400).json({ error: 'Por favor, forneça o histórico da conversa.' });
   }
 
+  // Pegamos a última pergunta feita pelo usuário para registrar no log e passar ao Juiz
+  const ultimaPergunta = historico[historico.length - 1].content;
+
   try {
-    console.log(`[TecAI] Nova rodada estável iniciada para: "${pergunta}"`);
+    console.log(`[TecAI] Nova rodada com memória ativa. Último comando: "${ultimaPergunta}"`);
 
     const mensagensSistema = [];
     
@@ -40,9 +44,10 @@ app.post('/api/perguntar', async (req, res) => {
       });
     }
 
-    const promptFinalModelos = [...mensagensSistema, { role: "user", content: pergunta }];
+    // Unimos as diretrizes do sistema com todo o histórico de conversas anterior
+    const promptFinalModelos = [...mensagensSistema, ...historico];
 
-    // 1. Três competidores rápidos e estáveis rodando em paralelo
+    // 1. Enviando o histórico completo para os 3 competidores em paralelo
     const [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
@@ -55,7 +60,7 @@ app.post('/api/perguntar', async (req, res) => {
       }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' })),
 
       nvidia.chat.completions.create({
-        model: "meta/llama-3.1-8b-instruct", // Nova IA adicionada aqui!
+        model: "meta/llama-3.1-8b-instruct",
         messages: promptFinalModelos
       }).catch(err => ({ error: true, message: err.message || 'Erro de conexão' }))
     ]);
@@ -64,16 +69,16 @@ app.post('/api/perguntar', async (req, res) => {
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
     const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // 2. Montando o Ringue de Avaliação para o Juiz 70B
+    // 2. O Juiz avalia as três opções com base no contexto recente
     const promptJuiz = `
 Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
-Analise a pergunta original do usuário e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
+Analise a última pergunta do usuário dentro do contexto recente da conversa e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
 
 CRITÉRIO CRÍTICO DE DESEMPATE:
 O usuário definiu estas instruções de personalização: "${customInstructions || 'Nenhuma'}". 
 A opção escolhida como vencedora DEVE ser a que melhor seguiu essas regras.
 
-Pergunta do Usuário: "${pergunta}"
+Última Pergunta do Usuário: "${ultimaPergunta}"
 
 Opção 1 (DeepSeek):
 ${respostaDeepSeek}
