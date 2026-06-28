@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>TecAI - O Agregador Inteligente</title>
+  <title>Cactus - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <style>
     :root {
@@ -21,34 +21,13 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
 
-    body { 
-      background-color: var(--bg-color); 
-      color: var(--text-color); 
-      display: flex; 
-      height: 100vh; 
-      height: 100dvh; /* Altura dinâmica para corrigir o bug do celular */
-      overflow: hidden; 
-    }
+    body { background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 
-    /* BARRA LATERAL (SIDEBAR) */
-    #sidebar {
-      width: 260px;
-      background-color: var(--sidebar-bg);
-      border-right: 1px solid var(--border-color);
-      display: flex;
-      flex-direction: column;
-      padding: 16px;
-      gap: 16px;
-      flex-shrink: 0;
-      transition: transform 0.3s ease;
-      z-index: 1000;
-    }
-
+    #sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px; gap: 16px; flex-shrink: 0; transition: transform 0.3s ease; z-index: 1000; }
     .new-chat-btn { background: transparent; border: 1px dashed #3f3f46; color: #fff; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; text-align: left; transition: all 0.2s; }
     .new-chat-btn:hover { border-color: var(--accent-color); background: rgba(118, 185, 0, 0.05); }
 
     #chat-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-
     .chat-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: #a1a1aa; transition: all 0.2s; }
     .chat-item:hover { background: #18181b; color: #fff; }
     .chat-item.active { background: #202024; color: #fff; font-weight: 500; border-left: 3px solid var(--accent-color); }
@@ -57,64 +36,18 @@
     .delete-chat-btn { background: transparent; border: none; color: #71717a; cursor: pointer; font-size: 0.9rem; padding: 2px 6px; border-radius: 4px; }
     .delete-chat-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 
-    /* Cortina escura para o menu mobile */
-    #sidebar-overlay {
-      display: none;
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(4px);
-      z-index: 999;
-    }
+    #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 999; }
 
-    /* CONTEÚDO DO CHAT */
-    #main-content {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%);
-      min-width: 0; 
-    }
+    #main-content { flex: 1; display: flex; flex-direction: column; height: 100%; background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%); min-width: 0; }
 
-    header { 
-      padding: 14px 16px; 
-      border-bottom: 1px solid var(--border-color); 
-      background: rgba(18, 18, 20, 0.6); 
-      backdrop-filter: blur(12px);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      flex-shrink: 0; /* Garante que o topo nunca mude de tamanho */
-    }
-
+    header { padding: 14px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
     .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
     header h1 { font-size: 1.2rem; font-weight: 800; color: var(--accent-color); white-space: nowrap; }
     
-    .menu-toggle-btn {
-      display: none;
-      background: #18181b;
-      border: 1px solid var(--border-color);
-      color: #fff;
-      font-size: 1.2rem;
-      padding: 6px 12px;
-      border-radius: 8px;
-      cursor: pointer;
-    }
+    .menu-toggle-btn { display: none; background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+    .settings-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa; padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 
-    .settings-toggle-btn {
-      background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa;
-      padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600;
-      cursor: pointer; transition: all 0.2s; white-space: nowrap;
-    }
-
-    #settings-panel { 
-      display: none; position: absolute; top: 65px; right: 16px; z-index: 1001; 
-      background: #121214; border: 1px solid var(--border-color); 
-      max-width: 450px; width: calc(100% - 32px); border-radius: 16px; padding: 16px; 
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5); 
-    }
+    #settings-panel { display: none; position: absolute; top: 65px; right: 16px; z-index: 1001; background: #121214; border: 1px solid var(--border-color); max-width: 450px; width: calc(100% - 32px); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
     .panel-section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #1f1f22; }
     .panel-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -131,7 +64,6 @@
     .save-settings-btn { background: #0066ff; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 0.8rem; font-weight: 600; cursor: pointer; width: 100%; margin-top: 5px; }
 
     #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-
     .message { padding: 12px 16px; border-radius: 20px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
     .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 90%; }
@@ -153,19 +85,8 @@
     .model-card.llama { border-left-color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
-    /* CAIXA DE INPUT BLINDADA PARA MOBILE */
-    #input-container { 
-      padding: 12px 16px; 
-      width: 100%; 
-      display: flex; 
-      gap: 10px; 
-      align-items: center; 
-      background-color: var(--bg-color); 
-      flex-shrink: 0; /* IMPEDE QUE A CAIXA ENCOLHA OU SAIA DA TELA */
-    }
-    
+    #input-container { padding: 12px 16px; width: 100%; display: flex; gap: 10px; align-items: center; background-color: var(--bg-color); flex-shrink: 0; }
     .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; min-width: 0; }
-    .input-wrapper:focus-within { border-color: var(--accent-color); }
     .web-search-toggle { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.4; filter: grayscale(1); transition: all 0.2s; flex-shrink: 0; }
     .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); }
 
@@ -177,20 +98,11 @@
     .pulse { animation: pulseText 1.5s infinite ease-in-out; color: var(--accent-color); }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
     
-    /* REGRAS DE ADAPTAÇÃO PARA RESOLUÇÕES MENORES */
     @media (max-width: 768px) {
       .menu-toggle-btn { display: block; } 
-      
-      #sidebar {
-        position: fixed;
-        top: 0; bottom: 0; left: 0;
-        transform: translateX(-100%); 
-        width: 260px;
-      }
-      
+      #sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(-100%); width: 260px; }
       body.sidebar-open #sidebar { transform: translateX(0); }
       body.sidebar-open #sidebar-overlay { display: block; }
-
       .message { max-width: 90%; }
       .ai { max-width: 100%; }
     }
@@ -209,14 +121,14 @@
     <header>
       <div class="header-left">
         <button class="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <h1>TecAI</h1>
+        <h1>Cactus</h1>
       </div>
       <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Configurações</button>
       
       <div id="settings-panel">
         <div class="panel-section">
           <div class="section-header">
-            <span class="section-title">Suas instruções para o TecAI (Regras)</span>
+            <span class="section-title">Suas instruções para o Cactus (Regras)</span>
             <label class="switch">
               <input type="checkbox" id="rules-toggle" onchange="saveSettings()">
               <span class="slider"></span>
@@ -233,7 +145,7 @@
               <span class="slider"></span>
             </label>
           </div>
-          <textarea id="memory-input" class="panel-textarea" placeholder="Ex: 'Moro em Boa Viagem/CE'"></textarea>
+          <textarea id="memory-input" class="panel-textarea" placeholder="Ex: 'Moro no interior'"></textarea>
         </div>
         <button class="save-settings-btn" onclick="saveSettings(true)">Salvar Alterações</button>
       </div>
@@ -485,7 +397,7 @@
             <div class="model-text">${auditoria.deepseek}</div>
           </div>
           <div class="model-card gemma">
-            <div class="model-badge">🤖 Filtro 2: DiffusionGemma 26B</div>
+            <div class="model-badge">🤖 Filtro 2: Mixtral 8x7B</div>
             <div class="model-text">${auditoria.gemma}</div>
           </div>
           <div class="model-card llama">
@@ -504,7 +416,6 @@
       panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     }
 
-    // Fecha as configurações se o usuário clicar fora no mobile
     document.addEventListener('click', function(event) {
       const panel = document.getElementById('settings-panel');
       const btn = document.querySelector('.settings-toggle-btn');
