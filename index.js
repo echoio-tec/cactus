@@ -11,43 +11,67 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 35000 
+  timeout: 45000 // Aumentado para 45s para dar tempo da busca web + respostas
 });
 
+// FUNÇÃO DE OURO: Busca na internet em tempo real sem precisar de chaves pagas
+async function buscarNaWeb(query) {
+  try {
+    console.log(`[WebSearch] Pesquisando na internet por: "${query}"`);
+    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    
+    const response = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+    });
+    
+    if (!response.ok) throw new Error('Falha na resposta da rede');
+    const html = await response.text();
+    
+    // Captura os snippets de resultados reais da página do DuckDuckGo
+    const matches = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)];
+    const trechos = matches.slice(0, 3).map(m => m[1].replace(/<[^>]*>/g, '').trim());
+    
+    if (trechos.length === 0) return "Nenhum resultado recente encontrado na busca rápida.";
+    return trechos.join('\n\n');
+  } catch (err) {
+    console.error('Erro ao realizar busca web:', err);
+    return 'Não foi possível obter dados da internet para esta consulta.';
+  }
+}
+
 app.post('/api/perguntar', async (req, res) => {
-  // Agora recebemos o array completo de mensagens do histórico
-  const { historico, customInstructions, memoryContext } = req.body;
+  // Recebemos a chave 'pesquisaWeb' vinda do botão da interface
+  const { historico, customInstructions, memoryContext, pesquisaWeb } = req.body;
 
   if (!historico || historico.length === 0) {
     return res.status(400).json({ error: 'Por favor, forneça o histórico da conversa.' });
   }
 
-  // Pegamos a última pergunta feita pelo usuário para registrar no log e passar ao Juiz
   const ultimaPergunta = historico[historico.length - 1].content;
 
   try {
-    console.log(`[TecAI] Nova rodada com memória ativa. Último comando: "${ultimaPergunta}"`);
-
     const mensagensSistema = [];
     
     if (memoryContext) {
-      mensagensSistema.push({ 
-        role: "system", 
-        content: `Memória/Contexto sobre o usuário: ${memoryContext}` 
-      });
+      mensagensSistema.push({ role: "system", content: `Memória sobre o usuário: ${memoryContext}` });
     }
     
     if (customInstructions) {
+      mensagensSistema.push({ role: "system", content: `Instruções de estilo: ${customInstructions}` });
+    }
+
+    // SE A PESQUISA WEB ESTIVER ATIVA: Intercepta o fluxo e busca os fatos de 2026
+    if (pesquisaWeb) {
+      const dadosInternet = await buscarNaWeb(ultimaPergunta);
       mensagensSistema.push({ 
         role: "system", 
-        content: `Instruções estritas de comportamento/estilo: ${customInstructions}` 
+        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO ATUAL: 2026):\nUse as seguintes informações coletadas da web em tempo real para responder com total precisão a fatos recentes:\n${dadosInternet}` 
       });
     }
 
-    // Unimos as diretrizes do sistema com todo o histórico de conversas anterior
     const promptFinalModelos = [...mensagensSistema, ...historico];
 
-    // 1. Enviando o histórico completo para os 3 competidores em paralelo
+    // 1. Executando os competidores com o contexto enriquecido da internet
     const [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
@@ -69,14 +93,12 @@ app.post('/api/perguntar', async (req, res) => {
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
     const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // 2. O Juiz avalia as três opções com base no contexto recente
+    // 2. O Juiz decide a melhor resposta considerando o cumprimento das informações atualizadas
     const promptJuiz = `
 Você é um avaliador rigoroso e especialista em respostas de Inteligência Artificial.
 Analise a última pergunta do usuário dentro do contexto recente da conversa e escolha qual das três opções fornecidas é a melhor (mais precisa, clara e completa).
 
-CRITÉRIO CRÍTICO DE DESEMPATE:
-O usuário definiu estas instruções de personalização: "${customInstructions || 'Nenhuma'}". 
-A opção escolhida como vencedora DEVE ser a que melhor seguiu essas regras.
+Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida, sem adendos.
 
 Última Pergunta do Usuário: "${ultimaPergunta}"
 
@@ -88,8 +110,6 @@ ${respostaGemma}
 
 Opção 3 (Llama 8B):
 ${respostaLlama8b}
-
-Sua resposta deve conter APENAS E EXATAMENTE o texto da melhor opção escolhida, sem adendos.
     `;
 
     const llamadaJuiz = await nvidia.chat.completions.create({
