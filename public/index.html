@@ -42,7 +42,13 @@
 
     header { padding: 14px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
     .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
-    header h1 { font-size: 1.2rem; font-weight: 800; color: var(--accent-color); white-space: nowrap; }
+    
+    /* Estilização da Imagem da Logo no Cabeçalho */
+    .logo-header {
+      height: 36px;
+      width: auto;
+      display: block;
+    }
     
     .menu-toggle-btn { display: none; background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
     .settings-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa; padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
@@ -96,16 +102,7 @@
     button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
     button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
-    /* ESTILIZAÇÃO DO AVISO RECENTE DO RODAPÉ */
-    .disclaimer {
-      font-size: 0.72rem;
-      color: #71717a;
-      text-align: center;
-      padding-bottom: 10px;
-      background-color: var(--bg-color);
-      flex-shrink: 0;
-      width: 100%;
-    }
+    .disclaimer { font-size: 0.72rem; color: #71717a; text-align: center; padding-bottom: 10px; background-color: var(--bg-color); flex-shrink: 0; width: 100%; }
 
     .pulse { animation: pulseText 1.5s infinite ease-in-out; color: var(--accent-color); }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
@@ -117,6 +114,7 @@
       body.sidebar-open #sidebar-overlay { display: block; }
       .message { max-width: 90%; }
       .ai { max-width: 100%; }
+      .logo-header { height: 30px; } /* Ajuste fino do tamanho da logo no celular */
     }
   </style>
 </head>
@@ -133,7 +131,7 @@
     <header>
       <div class="header-left">
         <button class="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
-        <h1>Cactus</h1>
+        <img src="Logo Cactus.png" alt="Cactus" class="logo-header">
       </div>
       <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Configurações</button>
       
@@ -151,7 +149,7 @@
 
         <div class="panel-section">
           <div class="section-header">
-            <span class="section-title">Memória activa (Fatos sobre você)</span>
+            <span class="section-title">Memória ativa (Fatos sobre você)</span>
             <label class="switch">
               <input type="checkbox" id="memory-toggle" onchange="saveSettings()">
               <span class="slider"></span>
@@ -211,13 +209,13 @@
     function toggleSidebar() { document.body.classList.toggle('sidebar-open'); }
     function fecharSidebarNoCelular() { document.body.classList.remove('sidebar-open'); }
 
+    // RETAIN WEB SEARCH TOGGLE STATE
     function toggleWebSearch() {
       pesquisaWebAtiva = !pesquisaWebAtiva;
       localStorage.setItem('teca_web_search', pesquisaWebAtiva);
       document.getElementById('web-toggle-btn').classList.toggle('active', pesquisaWebAtiva);
     }
 
-    // CRIAÇÃO E RENDERIZAÇÃO SEM PERDA DE DADOS ANTIGOS
     function criarNovoChat() {
       const novoId = 'chat_' + Date.now();
       const novoChat = { id: novoId, title: 'Novo Chat', messages: [] };
@@ -438,6 +436,7 @@
       }
     });
 
+    // REPLICATE ENHANCED LOCAL STORAGE SETTINGS
     function saveSettings(alertUser = false) {
       localStorage.setItem('teca_rules', document.getElementById('rules-input').value);
       localStorage.setItem('teca_memory', document.getElementById('memory-input').value);
