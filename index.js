@@ -14,26 +14,38 @@ const nvidia = new OpenAI({
   timeout: 45000 
 });
 
+// FUNÇÃO ATUALIZADA: Conexão via API oficial da Tavily (Sem bloqueios de IP)
 async function buscarNaWeb(query) {
   try {
-    console.log(`[WebSearch] Pesquisando na internet por: "${query}"`);
-    const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    if (!process.env.TAVILY_API_KEY) {
+      return "Aviso: Chave TAVILY_API_KEY não configurada no Render.";
+    }
+
+    console.log(`[Tavily API] Pesquisando dados reais para: "${query}"`);
     
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' }
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key: process.env.TAVILY_API_KEY,
+        query: query,
+        search_depth: "basic",
+        max_results: 3
+      })
     });
+
+    if (!response.ok) throw new Error(`Erro na API Tavily: ${response.status}`);
+    const data = await response.json();
     
-    if (!response.ok) throw new Error('Bloqueio de rede ou timeout');
-    const html = await response.text();
-    
-    const matches = [...html.matchAll(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g)];
-    const trechos = matches.slice(0, 3).map(m => m[1].replace(/<[^>]*>/g, '').trim());
-    
-    if (trechos.length === 0) return "Aviso: O buscador não retornou resultados válidos (Pode ter ocorrido um bloqueio por CAPTCHA no Render).";
-    return trechos.join('\n\n');
+    if (!data.results || data.results.length === 0) {
+      return "Nenhum resultado recente encontrado na internet.";
+    }
+
+    // Une os títulos e conteúdos encontrados em um bloco de texto do sistema
+    return data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n');
   } catch (err) {
-    console.error('Erro ao realizar busca web:', err);
-    return `Erro na busca: ${err.message}`;
+    console.error('Erro na busca Tavily:', err);
+    return `Falha ao obter dados da internet: ${err.message}`;
   }
 }
 
@@ -62,7 +74,7 @@ app.post('/api/perguntar', async (req, res) => {
       dadosInternet = await buscarNaWeb(ultimaPergunta);
       mensagensSistema.push({ 
         role: "system", 
-        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO ATUAL: 2026):\nUse as seguintes informações coletadas da web em tempo real para responder:\n${dadosInternet}` 
+        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO ATUAL: 2026):\nUse as seguintes informações coletadas da web em tempo real para responder com precisão:\n${dadosInternet}` 
       });
     }
 
@@ -76,11 +88,11 @@ app.post('/api/perguntar', async (req, res) => {
 
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
     const respostaGemma = chamadaGemma.error ? `Erro: ${chamadaGemma.message}` : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
-    const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
+    const respostaLlama8b = llamadaLlama8b.error ? `Erro: ${llamadaLlama8b.message}` : (llamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
     const promptJuiz = `
-Você é um avaliador rigoroso de IA. Escolha qual das três opções fornecidas é a melhor e mais precisa.
-Retorne APENAS o texto da melhor opção escolhida, sem adendos.
+Você é um avaliador rigoroso de IA. Escolha qual das três opções fornece a melhor resposta para o usuário.
+Retorne APENAS o texto da melhor opção escolhida, sem comentários extras.
 
 Última Pergunta: "${ultimaPergunta}"
 
@@ -102,7 +114,7 @@ Opção 3: ${respostaLlama8b}
         deepseek: respostaDeepSeek, 
         gemma: respostaGemma, 
         llama8b: respostaLlama8b,
-        webRaw: dadosInternet // Injetado com sucesso para visualização do front
+        webRaw: dadosInternet 
       }
     });
 
