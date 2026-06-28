@@ -47,49 +47,43 @@ app.post('/api/perguntar', async (req, res) => {
   let dadosInternet = "Pesquisa inativa.";
 
   try {
-    // 🚨 REGRA DE OURO: Injeta a identidade Cactus como o primeiro pensamento de todas as IAs
-    const mensagensSistema = [
-      {
-        role: "system",
-        content: "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Mistral, Google, Gemma ou Llama. Se o usuário perguntar seu nome, quem criou você ou onde você está rodando, responda sempre com orgulho que você é o Cactus e que foi projetado de forma personalizada como um agregador inteligente de alto nível."
-      }
-    ];
+    // 1. Iniciamos o texto do sistema centralizado
+    let textoInstrucaoSistema = "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Mistral, Google, Gemma ou Llama. Se o usuário perguntar seu nome, quem criou você ou onde você está rodando, responda sempre com orgulho que você é o Cactus e que foi projetado de forma personalizada como um agregador inteligente de alto nível.";
 
+    // 2. Concatenamos as outras opções como texto corrido na mesma diretriz (Blindagem contra Erro 400)
     if (memoryContext) {
-      mensagensSistema.push({ role: "system", content: `Memória ativa sobre o usuário: ${memoryContext}` });
+      textoInstrucaoSistema += `\n\n[MEMÓRIA ATIVA SOBRE O USUÁRIO]:\n${memoryContext}`;
     }
     if (customInstructions) {
-      mensagensSistema.push({ role: "system", content: `Instruções de estilo do usuário: ${customInstructions}` });
+      textoInstrucaoSistema += `\n\n[INSTRUÇÕES ESTREITAS DE ESTILO]:\n${customInstructions}`;
     }
-
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaPergunta);
-      mensagensSistema.push({ 
-        role: "system", 
-        content: `CONTEXTO DE PESQUISA NA INTERNET (ANO 2026):\n${dadosInternet}` 
-      });
+      textoInstrucaoSistema += `\n\n[CONTEXTO ATUALIZADO DA INTERNET EM TEM REAL (ANO 2026)]:\n${dadosInternet}`;
     }
 
-    const promptFinalModelos = [...mensagensSistema, ...historico];
+    // 3. Montamos o prompt final com exatamente APENAS UM objeto do tipo system no início do array
+    const promptFinalModelos = [
+      { role: "system", content: textoInstrucaoSistema },
+      ...historico
+    ];
 
-    // Chamada paralela dos competidores
-    const [chamadaDeepSeek, llamadaMixtral, chamadaLlama8b] = await Promise.all([
+    // Chamada paralela estável dos três competidores
+    const [chamadaDeepSeek, chamadaMixtral, chamadaLlama8b] = await Promise.all([
       nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
       nvidia.chat.completions.create({ model: "mistralai/mixtral-8x7b-instruct-v0.1", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message })),
       nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptFinalModelos }).catch(err => ({ error: true, message: err.message }))
     ]);
 
     const respostaDeepSeek = chamadaDeepSeek.error ? `Erro: ${chamadaDeepSeek.message}` : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
-    const respostaMixtral = llamadaMixtral.error ? `Erro: ${llamadaMixtral.message}` : (llamadaMixtral.choices?.[0]?.message?.content || "Vazio.");
+    const respostaMixtral = chamadaMixtral.error ? `Erro: ${chamadaMixtral.message}` : (chamadaMixtral.choices?.[0]?.message?.content || "Vazio.");
     const respostaLlama8b = chamadaLlama8b.error ? `Erro: ${chamadaLlama8b.message}` : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // Promp do Juiz atualizado com a marca Cactus
+    // Prompt do Juiz avaliador do ecossistema Cactus
     const promptJuiz = `
-Você é o avaliador e Juiz Supremo do Cactus. 
-Sua missão é escolher a melhor resposta entre as três opções fornecidas. 
-Escolha a opção que respondeu com mais precisão, clareza e que assumiu perfeitamente a identidade do Cactus, sem revelar marcas externas.
-
-Retorne APENAS E EXATAMENTE o texto da resposta escolhida, sem justificativas ou comentários.
+Você é o avaliador oficial do Cactus. Escolha a melhor e mais precisa resposta entre as três opções fornecidas. 
+Priorize a opção que assumiu perfeitamente a identidade do Cactus, mantendo o tom profissional e sem expor marcas externas das APIs.
+Retorne APENAS o texto da escolhida, sem adendos.
 
 Última Pergunta: "${ultimaPergunta}"
 
@@ -111,8 +105,8 @@ Opção 3: ${respostaLlama8b}
     });
 
   } catch (error) {
-    console.error('Erro inesperado:', error);
-    res.status(500).json({ error: `Erro interno: ${error.message}` });
+    console.error('Erro inesperado no servidor:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
