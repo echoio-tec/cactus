@@ -88,6 +88,7 @@
     .model-card.llama { border-left-color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
+    /* ESTRUTURA EXPANDIDA DE INPUT PARA ANEXOS */
     #input-area-wrapper { display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); flex-shrink: 0; }
     
     #preview-attachment-box { display: none; align-items: center; gap: 10px; background: #1c1c1f; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 0.85rem; color: #e4e4e7; }
@@ -223,7 +224,7 @@
       }
     };
 
-    // ⚡ COMPRESSOR HIGH-SPEED AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
+    // 💥 COMPRESSOR INTELIGENTE AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
@@ -237,7 +238,7 @@
             const canvas = document.createElement('canvas');
             let width = img.width;
             let height = img.height;
-            const MAX_SIZE = 1024; // Tamanho ótimo para IA de visão computacional
+            const MAX_SIZE = 1024; // Tamanho ideal para interpretação analítica NIM
 
             if (width > height) {
               if (width > MAX_SIZE) {
@@ -282,7 +283,6 @@
       document.getElementById('preview-attachment-box').style.display = 'flex';
     }
 
-    // Corrigido e higienizado o seletor de limpeza para evitar dados fantasmas
     function limparAnexo() {
       arquivoCarregado = null;
       document.getElementById('file-input').value = '';
@@ -311,10 +311,13 @@
     function carregarChat(id) {
       idChatAtivo = id;
       localStorage.setItem('teca_id_chat_ativo', idChatAtivo);
+      
       document.querySelectorAll('.chat-item').forEach(item => {
         item.classList.toggle('active', item.getAttribute('data-id') === id);
       });
+
       chatContainer.innerHTML = '<div class="system-status">Batalha tripla com retenção de histórico ativa</div>';
+      
       const chatCorrente = listaChats.find(c => c.id === id);
       if (chatCorrente && chatCorrente.messages) {
         chatCorrente.messages.forEach(msg => {
@@ -350,13 +353,16 @@
         item.className = `chat-item ${chat.id === idChatAtivo ? 'active' : ''}`;
         item.setAttribute('data-id', chat.id);
         item.onclick = () => carregarChat(chat.id);
+
         const titulo = document.createElement('span');
         titulo.className = 'chat-item-title';
         titulo.innerText = chat.title;
+
         const botaoDeletar = document.createElement('button');
         botaoDeletar.className = 'delete-chat-btn';
         botaoDeletar.innerHTML = '🗑️';
         botaoDeletar.onclick = (e) => deletarChat(chat.id, e);
+
         item.appendChild(titulo);
         item.appendChild(botaoDeletar);
         chatListElement.appendChild(item);
@@ -484,6 +490,7 @@
     function adicionarMensagemDivComBastidores(respostaFinal, auditoria) {
       const msgConteudo = document.createElement('div');
       msgConteudo.className = 'message ai';
+      
       const textoFinal = document.createElement('div');
       textoFinal.className = 'ai-render-content';
       textoFinal.innerHTML = marked.parse(respostaFinal);
@@ -499,7 +506,7 @@
             <div class="model-text" style="font-style: italic; color: #a1a1aa;">${auditoria.webRaw || 'Nenhum dado coletado.'}</div>
           </div>
           <div class="model-card deepseek">
-            <div class="model-badge">🤖 Filtro 1: DeepSeek v4 Flash</div>
+            <div class="model-badge">🤖 Filtro 1: Visão/Análise Analítica NIM</div>
             <div class="model-text">${auditoria.deepseek}</div>
           </div>
           <div class="model-card gemma">
@@ -539,6 +546,14 @@
         alert('Configurações de personalização salvas!');
         toggleSettingsPanel();
       }
+    }
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Cactus PWA Ativo.'))
+        .catch(err => console.log('Erro PWA:', err));
     }
   </script>
 </body>
