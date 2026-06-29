@@ -20,17 +20,23 @@ app.post('/api/perguntar', async (req, res) => {
   if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
     const prompt = ultimaMensagem.replace(/^\/(gerar|imagem)\s*/i, '');
     try {
-      const response = await nvidia.images.generate({
-        model: "stabilityai/sdxl-turbo",
-        prompt: prompt
+      // Usando a estrutura direta da API da NVIDIA NIM
+      const response = await fetch('https://integrate.api.nvidia.com/v1/models/stabilityai/sdxl-turbo/infer', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${process.env.NVIDIA_API_KEY}`,
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ prompt: prompt, cfg_scale: 5, seed: 42 })
       });
-      return res.json({ respostaFinal: `![Imagem](${response.data[0].url})`, auditoria: {} });
+      const data = await response.json();
+      return res.json({ respostaFinal: `![Imagem](${data.url})` });
     } catch (e) {
       return res.json({ respostaFinal: "Erro ao gerar imagem. Tente novamente." });
     }
   }
 
-  // ROTA TEXTUAL/VISUAL
+  // ROTA DE CHAT E VISÃO
   try {
     const messages = [...historico];
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
@@ -45,10 +51,10 @@ app.post('/api/perguntar', async (req, res) => {
       messages: messages
     });
 
-    res.json({ respostaFinal: completion.choices[0].message.content, auditoria: {} });
+    res.json({ respostaFinal: completion.choices[0].message.content });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.listen(3000, () => console.log('Servidor Cactus rodando na porta 3000'));
+app.listen(3000, () => console.log('Cactus operacional na porta 3000'));
