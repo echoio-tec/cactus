@@ -7,114 +7,122 @@
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="manifest" href="manifest.json">
   <style>
-    :root {
-      --bg-color: #0b0b0c; --sidebar-bg: #0e0e10; --chat-bg: #161618;
-      --text-color: #f4f4f5; --accent-color: #76b900; --user-msg: #27272a;
-      --border-color: #27272a; --color-deepseek: #0066ff;
-      --color-gemma: #a855f7; --color-llama: #ff2a5f;
-    }
+    :root { --bg-color: #0b0b0c; --sidebar-bg: #0e0e10; --chat-bg: #161618; --text-color: #f4f4f5; --accent-color: #76b900; --user-msg: #27272a; --border-color: #27272a; }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; }
-    body { background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
-    #sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px; gap: 16px; flex-shrink: 0; transition: transform 0.3s ease; z-index: 1000; }
-    .new-chat-btn { background: transparent; border: 1px dashed #3f3f46; color: #fff; padding: 12px; border-radius: 12px; font-weight: 600; cursor: pointer; text-align: left; transition: all 0.2s; }
-    .new-chat-btn:hover { border-color: var(--accent-color); background: rgba(118, 185, 0, 0.05); }
+    body { background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; overflow: hidden; }
+    #sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px; gap: 16px; flex-shrink: 0; }
+    .new-chat-btn { background: transparent; border: 1px dashed #3f3f46; color: #fff; padding: 12px; border-radius: 12px; font-weight: 600; cursor: pointer; text-align: left; }
+    .new-chat-btn:hover { border-color: var(--accent-color); }
     #chat-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
-    .chat-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 0.88rem; color: #a1a1aa; }
-    .chat-item:hover { background: #18181b; color: #fff; }
+    .chat-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 8px; cursor: pointer; color: #a1a1aa; }
     .chat-item.active { background: #202024; color: #fff; border-left: 3px solid var(--accent-color); }
-    #main-content { flex: 1; display: flex; flex-direction: column; height: 100%; min-width: 0; }
-    header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); height: 65px; display: flex; align-items: center; justify-content: space-between; }
-    .logo-header { height: 50px; width: auto; }
+    #main-content { flex: 1; display: flex; flex-direction: column; }
+    header { padding: 16px; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; }
+    .logo-header { height: 40px; }
     #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
     .message { padding: 12px 16px; border-radius: 20px; max-width: 85%; word-wrap: break-word; }
-    .user { background-color: var(--user-msg); align-self: flex-end; color: #fff; }
-    .ai { background-color: var(--chat-bg); align-self: flex-start; border: 1px solid var(--border-color); width: 100%; }
-    .ai-render-content img { max-width: 100%; border-radius: 12px; margin-top: 8px; }
-    #input-area-wrapper { padding: 12px 16px; width: 100%; }
-    .input-wrapper { background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 4px 12px; }
-    textarea { flex: 1; background: transparent; border: none; color: var(--text-color); resize: none; height: 44px; outline: none; padding: 12px 8px; }
-    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; }
+    .user { background-color: var(--user-msg); align-self: flex-end; }
+    .ai { background-color: var(--chat-bg); align-self: flex-start; border: 1px solid var(--border-color); width: 90%; }
+    #input-area-wrapper { padding: 16px; border-top: 1px solid var(--border-color); }
+    .input-wrapper { background: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 4px 12px; }
+    textarea { flex: 1; background: transparent; border: none; color: white; resize: none; height: 40px; outline: none; padding: 10px; }
+    button#send-btn { background: var(--accent-color); border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; }
   </style>
 </head>
 <body>
-  <div id="sidebar"><button class="new-chat-btn" onclick="criarNovoChat()">➕ Novo chat</button><div id="chat-list"></div></div>
+  <div id="sidebar">
+    <button class="new-chat-btn" onclick="criarNovoChat()">➕ Novo chat</button>
+    <div id="chat-list"></div>
+  </div>
   <div id="main-content">
     <header>
       <img src="Logo Cactus.png" alt="Cactus" class="logo-header">
-      <button class="settings-toggle-btn" onclick="toggleSettings()">⚙️</button>
+      <button onclick="toggleSettings()">⚙️</button>
     </header>
     <div id="chat-container"></div>
     <div id="input-area-wrapper">
       <div class="input-wrapper">
         <input type="file" id="file-input" style="display: none;" onchange="processarArquivo(this)" accept="image/*">
-        <button class="icon-btn" onclick="document.getElementById('file-input').click()">📎</button>
-        <textarea id="user-input" placeholder="Digite sua mensagem ou /gerar [texto]..."></textarea>
+        <button onclick="document.getElementById('file-input').click()">📎</button>
+        <textarea id="user-input" placeholder="Pergunte ao Cactus..."></textarea>
         <button id="send-btn" onclick="enviarPergunta()">➜</button>
       </div>
     </div>
   </div>
 
   <script>
-    let listaChats = [], idChatAtivo = null, arquivoCarregado = null;
-    
-    function processarArquivo(input) {
-      const file = input.files[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = 1024; canvas.height = (img.height / img.width) * 1024;
-          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          arquivoCarregado = { tipo: 'imagem', nome: file.name, conteudo: canvas.toDataURL('image/jpeg', 0.7) };
-          alert('Imagem carregada e pronta para análise!');
-        };
-        img.src = e.target.result;
-      };
-      reader.readAsDataURL(file);
-    }
+    let listaChats = JSON.parse(localStorage.getItem('teca_lista_chats') || '[]');
+    let idChatAtivo = localStorage.getItem('teca_id_chat_ativo');
+    let arquivoCarregado = null;
 
-    async function enviarPergunta() {
-      const input = document.getElementById('user-input');
-      const texto = input.value.trim();
-      if (!texto && !arquivoCarregado) return;
-      
-      input.value = '';
-      const chatCorrente = listaChats.find(c => c.id === idChatAtivo);
-      chatCorrente.messages.push({ role: 'user', content: texto });
-      renderizarChat();
-
-      try {
-        const res = await fetch('/api/perguntar', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ historico: chatCorrente.messages, arquivoAnexo: arquivoCarregado })
-        });
-        const data = await res.json();
-        chatCorrente.messages.push({ role: 'assistant', content: data.respostaFinal, auditoria: data.auditoria });
-        renderizarChat();
-        arquivoCarregado = null;
-      } catch (e) { alert('Erro: ' + e.message); }
+    function renderizarBarraLateral() {
+      const list = document.getElementById('chat-list');
+      list.innerHTML = '';
+      listaChats.forEach(chat => {
+        const div = document.createElement('div');
+        div.className = `chat-item ${chat.id === idChatAtivo ? 'active' : ''}`;
+        div.innerText = chat.title;
+        div.onclick = () => { idChatAtivo = chat.id; renderizarChat(); renderizarBarraLateral(); };
+        list.appendChild(div);
+      });
     }
 
     function criarNovoChat() {
       idChatAtivo = 'chat_' + Date.now();
       listaChats.unshift({ id: idChatAtivo, title: 'Novo Chat', messages: [] });
+      renderizarBarraLateral();
       renderizarChat();
+      localStorage.setItem('teca_lista_chats', JSON.stringify(listaChats));
     }
 
     function renderizarChat() {
       const container = document.getElementById('chat-container');
       container.innerHTML = '';
       const chat = listaChats.find(c => c.id === idChatAtivo);
-      chat.messages.forEach(m => {
-        const div = document.createElement('div');
-        div.className = 'message ' + m.role;
-        div.innerHTML = marked.parse(m.content);
-        container.appendChild(div);
-      });
+      if(chat) {
+        chat.messages.forEach(m => {
+          const div = document.createElement('div');
+          div.className = 'message ' + m.role;
+          div.innerHTML = marked.parse(m.content);
+          container.appendChild(div);
+        });
+      }
     }
+
+    async function enviarPergunta() {
+      const input = document.getElementById('user-input');
+      const texto = input.value.trim();
+      if (!texto && !arquivoCarregado) return;
+      input.value = '';
+      const chat = listaChats.find(c => c.id === idChatAtivo);
+      chat.messages.push({ role: 'user', content: texto });
+      renderizarChat();
+
+      try {
+        const res = await fetch('/api/perguntar', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ historico: chat.messages, arquivoAnexo: arquivoCarregado })
+        });
+        const data = await res.json();
+        chat.messages.push({ role: 'assistant', content: data.respostaFinal });
+        renderizarChat();
+        arquivoCarregado = null;
+      } catch (e) { alert('Erro: ' + e.message); }
+    }
+
+    function processarArquivo(input) {
+      const file = input.files[0];
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        arquivoCarregado = { tipo: 'imagem', nome: file.name, conteudo: e.target.result };
+        alert('Imagem pronta para o Cactus!');
+      };
+      reader.readAsDataURL(file);
+    }
+    
+    renderizarBarraLateral();
+    renderizarChat();
   </script>
 </body>
 </html>
