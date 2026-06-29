@@ -46,7 +46,7 @@
     header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; height: 65px; }
     .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
     
-    /* Calibração Estável de 50px para a Marca */
+    /* Calibração Estável de 50px para a Marca Oficial */
     .logo-header { height: 50px; width: auto; display: block; }
     
     .menu-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
@@ -227,8 +227,7 @@
       }
     };
 
-    // ⚡ COMPRESSOR HIGH-SPEED AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
-    // Reduz as fotos para 1024px e converte em JPEG 70% para passar limpo pelas APIs da NVIDIA
+    // 💥 COMPRESSOR HIGH-SPEED AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
@@ -286,6 +285,7 @@
       document.getElementById('preview-attachment-box').style.display = 'flex';
     }
 
+    // Limpeza explícita para evitar payloads duplicados ou dados fantasmas
     function limparAnexo() {
       arquivoCarregado = null;
       document.getElementById('file-input').value = '';
@@ -509,15 +509,15 @@
             <div class="model-text" style="font-style: italic; color: #a1a1aa;">${auditoria.webRaw || 'Nenhum dado coletado.'}</div>
           </div>
           <div class="model-card deepseek">
-            <div class="model-badge">🤖 Filtro 1: Visão/Análise Analítica NIM</div>
+            <div class="model-badge">🤖 Filtro 1: Visão Computacional / Analítica NIM</div>
             <div class="model-text">${auditoria.deepseek}</div>
           </div>
           <div class="model-card gemma">
-            <div class="model-badge">🤖 Filtro 2: Google Gemma 2 27B</div>
+            <div class="model-badge">🤖 Filtro 2: DeepSeek Engine Flash</div>
             <div class="model-text">${auditoria.gemma}</div>
           </div>
           <div class="model-card llama">
-            <div class="model-badge">🤖 Filtro 3: Llama 3.1 8B Instruct</div>
+            <div class="model-badge">🤖 Filtro 3: Llama 3.1 Instruct Core</div>
             <div class="model-text">${auditoria.llama8b}</div>
           </div>
         </div>
