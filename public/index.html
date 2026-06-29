@@ -46,7 +46,6 @@
     header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; height: 65px; }
     .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
     
-    /* Calibração Estável de 50px para a Marca Oficial */
     .logo-header { height: 50px; width: auto; display: block; }
     
     .menu-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
@@ -73,7 +72,6 @@
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
     .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 90%; }
 
-    /* Exibição Fluida e Responsiva de Fotos Carregadas no Chat */
     .ai-render-content img { max-width: 100%; max-height: 350px; border-radius: 12px; margin-top: 8px; border: 1px solid var(--border-color); display: block; }
     .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 12px 0 6px 0; font-size: 1.1rem; font-weight: 700; }
     .ai-render-content p { margin-bottom: 10px; color: #e4e4e7; }
@@ -92,8 +90,8 @@
     .model-card.llama { border-left-color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
-    /* Caixa de Arquivos do Módulo Multimídia */
     #input-area-wrapper { display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); flex-shrink: 0; }
+    
     #preview-attachment-box { display: none; align-items: center; gap: 10px; background: #1c1c1f; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 0.85rem; color: #e4e4e7; }
     .preview-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #3f3f46; display: none; }
     .remove-attachment-btn { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 1rem; padding: 0 4px; }
@@ -185,7 +183,7 @@
           <input type="file" id="file-input" style="display: none;" onchange="processarArquivoLocal(this)" accept="image/*,text/plain,application/json,text/csv,.log">
           
           <button id="web-toggle-btn" class="icon-btn-input web-search-toggle" onclick="toggleWebSearch()" title="Ativar Pesquisa na Internet">🌐</button>
-          <textarea id="user-input" placeholder="Faça uma pergunta para as IAs..." rows="1"></textarea>
+          <textarea id="user-input" placeholder="Faça uma pergunta ou use /gerar para criar imagens..." rows="1"></textarea>
         </div>
         <button id="send-btn" onclick="enviarPergunta()">➜</button>
       </div>
@@ -227,7 +225,6 @@
       }
     };
 
-    // 💥 COMPRESSOR HIGH-SPEED AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
@@ -285,7 +282,6 @@
       document.getElementById('preview-attachment-box').style.display = 'flex';
     }
 
-    // Limpeza explícita para evitar payloads duplicados ou dados fantasmas
     function limparAnexo() {
       arquivoCarregado = null;
       document.getElementById('file-input').value = '';
@@ -422,7 +418,14 @@
 
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'message ai pulse';
-      loadingDiv.innerText = 'Processando dados multimodais...';
+      
+      // 🎨 Efeito de carregamento inteligente detectando geração de imagem
+      if (promptFinalEnvio.startsWith('/gerar') || promptFinalEnvio.startsWith('/imagem')) {
+        loadingDiv.innerText = '🎨 Desenhando e gerando imagem via IA...';
+      } else {
+        loadingDiv.innerText = 'Processando dados multimodais...';
+      }
+      
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -523,6 +526,7 @@
         </div>
       `;
       msgConteudo.appendChild(detalhes);
+      msgConteudo.appendChild(textoFinal);
       chatContainer.appendChild(msgConteudo);
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
