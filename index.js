@@ -66,11 +66,33 @@ app.post('/api/perguntar', async (req, res) => {
   let dadosInternet = "Pesquisa inativa.";
 
   try {
+    // 🎨 FLUXO ATIVO: GERADOR DE IMAGEM DA NVIDIA (SDXL)
+    if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
+      const promptImagem = ultimaMensagem.replace(/^\/(gerar|imagem)\s*/i, '');
+      if (!promptImagem) {
+        return res.json({ respostaFinal: "Por favor, especifique o que deseja gerar. Exemplo: `/gerar um cacto no deserto`" });
+      }
+
+      console.log(`[Cactus-ImageEngine] Gerando arte gráfica para: "${promptImagem}"`);
+      
+      const responseImg = await nvidia.images.generate({
+        model: "stabilityai/stable-diffusion-xl",
+        prompt: promptImagem,
+        response_format: "url"
+      });
+
+      const urlGerada = responseImg.data[0].url;
+      return res.json({
+        respostaFinal: `🎨 Aqui está a imagem que você pediu para eu gerar sobre **"${promptImagem}"**:\n\n![Imagem Gerada](${urlGerada})`,
+        auditoria: { deepseek: "Imagem renderizada via SDXL", gemma: "N/A", llama8b: "N/A", webRaw: "N/A" }
+      });
+    }
+
     // DIRETRIZ MASTER TEXTUAL DO CACTUS
     let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Google, Gemma ou Llama. Responda sempre com orgulho que você é o Cactus e que foi projetado de forma personalizada como um agregador inteligente de alto nível.";
 
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA ATIVA SOBRE O USUÁRIO]:\n${memoryContext}`;
-    if (customInstructions) systemTexto += `\n\n[INSTRUÇÕES ESTREITAS DE ESTILO]:\n${customInstructions}`;
+    if (customInstructions) sistemaTexto += `\n\n[INSTRUÇÕES ESTREITAS DE ESTILO]:\n${customInstructions}`;
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
       sistemaTexto += `\n\n[CONTEXTO ATUALIZADO DA INTERNET]:\n${dadosInternet}`;
@@ -87,7 +109,6 @@ app.post('/api/perguntar', async (req, res) => {
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       console.log("[Cactus-Engine] Executando análise multimodal isolada.");
       
-      // ⚡ PRISTINE PROMPT: Sem poluição de histórico para não cegar o modelo de visão
       const promptVisaoPuro = [
         {
           role: "user",
@@ -103,7 +124,6 @@ app.post('/api/perguntar', async (req, res) => {
         ...historicoSanitizado
       ];
 
-      // Execução paralela sem o endpoint quebrado da Gemma (Substituído por modelos estáveis da Meta e DeepSeek)
       [chamadaVision, chamadaTextual1, chamadaTextual2] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(err => ({ error: true, message: "Erro ao processar imagem no módulo de visão." })),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(err => ({ error: true, message: err.message })),
@@ -123,7 +143,6 @@ app.post('/api/perguntar', async (req, res) => {
     const res2 = chamadaTextual1.error ? chamadaTextual1.message : (chamadaTextual1.choices?.[0]?.message?.content || "Sem resposta.");
     const res3 = chamadaTextual2.error ? chamadaTextual2.message : (chamadaTextual2.choices?.[0]?.message?.content || "Sem resposta.");
 
-    // O Juiz força a escolha da resposta correta baseada no tipo de arquivo
     const promptJuiz = `
 Você é o Juiz do Cactus. Avalie as três opções de resposta e selecione a melhor, mais completa e profunda que responda ao usuário em PORTUGUÊS (PT-BR).
 Se houver uma imagem em análise no contexto, dê preferência absoluta para a Opção 1, pois ela foi gerada pelo modelo que possui olhos e realmente viu o arquivo. As outras opções são cegas por design.
@@ -154,4 +173,4 @@ Opção 3: ${res3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Sistema operacional estável na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus] Operacional com gerador SDXL ativo na porta ${PORT}`));
