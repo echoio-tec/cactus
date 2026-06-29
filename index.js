@@ -5,15 +5,14 @@ const { OpenAI } = require('openai');
 const app = express();
 
 app.use(cors());
-app.use(express.json({ limit: '30mb' }));
-app.use(express.urlencoded({ limit: '30mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 
-// Configuração com timeout estrito de 28 segundos para evitar quedas no Render
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 28000 
+  timeout: 60000 // Aumentado para lidar com imagens pesadas
 });
 
 // Higienização de histórico para evitar repetições que travam o Mixtral
@@ -26,7 +25,7 @@ function sanitizarHistorico(historico) {
     } else {
       const ultima = limpo[limpo.length - 1];
       if (ultima.role === msg.role) {
-        ultima.content += `\n${msg.content}`; 
+        ultima.content += `\n${msg.content}`; // Mescla mensagens seguidas do mesmo remetente
       } else {
         limpo.push({ role: msg.role, content: msg.content });
       }
@@ -39,6 +38,7 @@ function sanitizarHistorico(historico) {
 async function buscarNaWeb(query) {
   try {
     if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente.";
+    console.log(`[Cactus-Web] Busca por: "${query}"`);
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -64,14 +64,14 @@ app.post('/api/perguntar', async (req, res) => {
   
   const historicoSanitizado = sanitizarHistorico(historico);
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
+  
   let dadosInternet = "Pesquisa inativa.";
 
   try {
-    // 1. GERAÇÃO DE IMAGEM DA NVIDIA (SDXL)
+    // 🎨 FLUXO 1: GERAÇÃO DE IMAGEM DA NVIDIA (SDXL)
     if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
       const promptImagem = ultimaMensagem.replace(/^\/(gerar|imagem)\s*/i, '');
       if (!promptImagem) return res.json({ respostaFinal: "Especifique o prompt. Ex: `/gerar um cacto`" });
-      
       const responseImg = await nvidia.images.generate({
         model: "stabilityai/stable-diffusion-xl",
         prompt: promptImagem,
@@ -83,14 +83,14 @@ app.post('/api/perguntar', async (req, res) => {
       });
     }
 
-    // 2. CONSTRUÇÃO DA DIRETRIZ MASTER DO CACTUS
-    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Mistral, Google, Gemma ou Llama. Se o usuário perguntar seu nome ou quem criou você, responda sempre com orgulho que você é o Cactus.";
+    // 🧠 CONFIGURAÇÃO DA DIRETRIZ MASTER DO CACTUS
+    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Mistral, Google, Gemma ou Llama. Se o usuário perguntar seu nome, quem criou você ou onde você está rodando, responda sempre com orgulho que você é o Cactus.";
 
-    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA USUÁRIO]:\n${memoryContext}`;
-    if (customInstructions) sistemaTexto += `\n\n[ESTILO]:\n${customInstructions}`;
+    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA ATIVA SOBRE O USUÁRIO]:\n${memoryContext}`;
+    if (customInstructions) sistemaTexto += `\n\n[INSTRUÇÕES ESTREITAS DE ESTILO]:\n${customInstructions}`;
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
-      sistemaTexto += `\n\n[INTERNET]:\n${dadosInternet}`;
+      sistemaTexto += `\n\n[CONTEÚDO ATUALIZADO DA INTERNET]:\n${dadosInternet}`;
     }
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
@@ -100,15 +100,14 @@ app.post('/api/perguntar', async (req, res) => {
       promptTextualPuro.push({ role: "system", content: `[CONTEÚDO DO ARQUIVO ANEXADO ${arquivoAnexo.nome}]:\n${arquivoAnexo.conteudo}` });
     }
 
-    // 3. MONTAGEM DO RINGUE PARALELO (VISÃO VS TEXTO)
-    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
+    // 🧠 MONTAGEM DO RINGUE PARALELO (VISÃO VS TEXTO)
+    let chamadaDeepSeek, chamadaMixtral, chamadaLlama8b;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       console.log("[Cactus-Engine] Disparando ringue analítico com suporte a imagem.");
       
-      // Prompt estruturado para o modelo de Visão Computacional da NVIDIA
-      const promptVisaoEspecialista = [
-        { role: "system", content: sistemaTexto + "\n\nVocê é os olhos do Cactus. Analise a imagem técnica anexada com extremo rigor científico, leia os textos, equações, tabelas e explique tudo de forma didática." },
+      const promptVisaoPuro = [
+        { role: "system", content: sistemaTexto + "\n\nVocê é os olhos do Cactus. Analise a imagem anexada com extremo rigor científico, leia os textos e explique tudo." },
         {
           role: "user",
           content: [
@@ -125,31 +124,31 @@ app.post('/api/perguntar', async (req, res) => {
       ];
 
       // Disparo simultâneo (O modelo de visão corre junto com os textuais)
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoEspecialista }).catch(err => ({ error: true, message: "Filtro de Visão temporariamente indisponível." })),
+      [chamadaDeepSeek, chamadaMixtral, chamadaLlama8b] = await Promise.all([
+        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(err => ({ error: true, message: err.message })),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(err => ({ error: true, message: err.message })),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(err => ({ error: true, message: err.message }))
       ]);
 
     } else {
-      // Fluxo puramente textual padrão de alta velocidade
+      // Fluxo puramente textual padrão
       console.log("[Cactus-Engine] Disparando ringue textual padrão.");
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaDeepSeek, chamadaMixtral, chamadaLlama8b] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
         nvidia.chat.completions.create({ model: "mistralai/mixtral-8x7b-instruct-v0.1", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message }))
       ]);
     }
 
-    const res1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    const res2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
-    const res3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
+    const res1 = chamadaDeepSeek.error ? chamadaDeepSeek.message : (chamadaDeepSeek.choices?.[0]?.message?.content || "Sem resposta.");
+    const res2 = chamadaMixtral.error ? chamadaMixtral.message : (chamadaMixtral.choices?.[0]?.message?.content || "Sem resposta.");
+    const res3 = chamadaLlama8b.error ? chamadaLlama8b.message : (chamadaLlama8b.choices?.[0]?.message?.content || "Sem resposta.");
 
-    // 4. O VEREDITO DO JUIZ (Llama 70B escolhe a melhor resposta)
+    // 🏆 O VEREDITO DO JUIZ (Llama 70B escolhe a melhor resposta)
     const promptJuiz = `
-Você é o Juiz do Cactus. Avalie as três respostas e escolha a melhor, mais precisa e que responda de verdade ao usuário.
+Você é o Juiz do Cactus. Avalie as três respostas e escolha a melhor, mais completa e didática que responda estritamente em PORTUGUÊS (PT-BR) ao comando do usuário.
 Se houver uma imagem no contexto, priorize a resposta do Filtro 1 (que possui capacidade de visão), pois os outros filtros são cegos e podem ter alucinado ou se omitido corretamente.
-Retorne APENAS o texto da resposta escolhida, sem adendos.
+Retorne APENAS o texto puro da escolhida, sem metalinguagem ou justificativas.
 
 Pergunta do Usuário: "${ultimaMensagem}"
 
@@ -161,16 +160,17 @@ Opção 3: ${res3}
     const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
-    }).catch(() => null);
+    }).catch(err => ({ error: true, message: err.message }));
 
-    const respostaVencedora = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : res1;
+    const respostaVencedora = chamadaJuiz.error ? res1 : (chamadaJuiz.choices?.[0]?.message?.content || res1);
 
     res.json({
       respostaFinal: respostaVencedora,
-      auditoria: { deepseek: res1, gemma: res2, llama8b: res3, webRaw: arquivoAnexo ? `Arquivo: ${arquivoAnexo.nome}` : "Nenhum." }
+      auditoria: { deepseek: res1, gemma: res2, llama8b: res3, webRaw: arquivoAnexo ? `Mapeamento Concluído: ${arquivoAnexo.nome}` : "Nenhum anexo." }
     });
 
   } catch (error) {
+    console.error('Erro inesperado no servidor:', error);
     res.status(500).json({ error: error.message });
   }
 });
