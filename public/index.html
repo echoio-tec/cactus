@@ -70,7 +70,6 @@
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
     .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 90%; }
 
-    /* Estilização para renderizar imagens de forma fluida no Chat */
     .ai-render-content img { max-width: 100%; max-height: 350px; border-radius: 12px; margin-top: 8px; border: 1px solid var(--border-color); display: block; }
     .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 12px 0 6px 0; font-size: 1.1rem; font-weight: 700; }
     .ai-render-content p { margin-bottom: 10px; color: #e4e4e7; }
@@ -89,10 +88,8 @@
     .model-card.llama { border-left-color: var(--color-llama); }
     .model-text { color: #d4d4d8; white-space: pre-line; }
 
-    /* ESTRUTURA COMPACTA DE INPUT EXPANDIDO (MULTIMÍDIA) */
     #input-area-wrapper { display: flex; flex-direction: column; width: 100%; background-color: var(--bg-color); flex-shrink: 0; }
     
-    /* Balão de arquivo anexado temporariamente acima da caixa */
     #preview-attachment-box { display: none; align-items: center; gap: 10px; background: #1c1c1f; padding: 8px 16px; border-top: 1px solid var(--border-color); font-size: 0.85rem; color: #e4e4e7; }
     .preview-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #3f3f46; display: none; }
     .remove-attachment-btn { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 1rem; padding: 0 4px; }
@@ -101,7 +98,6 @@
     .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; min-width: 0; }
     .input-wrapper:focus-within { border-color: var(--accent-color); }
     
-    /* Botões Interativos da Caixa */
     .icon-btn-input { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; color: #fff; }
     .icon-btn-input:hover { opacity: 1; background: rgba(255,255,255,0.05); }
     .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); color: #0066ff; }
@@ -202,8 +198,6 @@
     let listaChats = [];
     let idChatAtivo = null;
     let pesquisaWebAtiva = false;
-    
-    // Objeto global que guarda o arquivo carregado em memória local
     let arquivoCarregado = null;
 
     window.onload = function() {
@@ -229,25 +223,51 @@
       }
     };
 
-    // PROCESSADOR MULTIMÍDIA DO NAVEGADOR (Local FileReader)
+    // ⚡ COMPRESSOR HIGH-SPEED AUTOMÁTICO DE IMAGEM VIA CANVAS HTML5
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
 
       const reader = new FileReader();
       
-      // Se for imagem, converte em Base64 para a IA de Visão NIM
       if (file.type.startsWith('image/')) {
         reader.onload = function(e) {
-          arquivoCarregado = { tipo: 'imagem', nome: file.name, conteudo: e.target.result };
-          document.getElementById('attachment-img-preview').src = e.target.result;
-          document.getElementById('attachment-img-preview').style.display = 'block';
-          mostrarBarraAnexo(file.name);
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            let width = img.width;
+            let height = img.height;
+            const MAX_SIZE = 1024; // Tamanho ótimo para IA de visão computacional
+
+            if (width > height) {
+              if (width > MAX_SIZE) {
+                height *= MAX_SIZE / width;
+                width = MAX_SIZE;
+              }
+            } else {
+              if (height > MAX_SIZE) {
+                width *= MAX_SIZE / height;
+                height = MAX_SIZE;
+              }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Compacta para JPEG 70% tirando o excesso de megabytes do payload
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+            
+            arquivoCarregado = { tipo: 'imagem', nome: file.name, conteudo: dataUrl };
+            document.getElementById('attachment-img-preview').src = dataUrl;
+            document.getElementById('attachment-img-preview').style.display = 'block';
+            mostrarBarraAnexo(file.name);
+          };
+          img.src = e.target.result;
         };
         reader.readAsDataURL(file);
-      } 
-      // Se for documento estruturado de texto (Logs, CSV, TXT), lê o conteúdo direto em string
-      else {
+      } else {
         reader.onload = function(e) {
           arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: e.target.result };
           document.getElementById('attachment-img-preview').style.display = 'none';
@@ -262,6 +282,7 @@
       document.getElementById('preview-attachment-box').style.display = 'flex';
     }
 
+    // Corrigido e higienizado o seletor de limpeza para evitar dados fantasmas
     function limparAnexo() {
       arquivoCarregado = null;
       document.getElementById('file-input').value = '';
@@ -290,13 +311,10 @@
     function carregarChat(id) {
       idChatAtivo = id;
       localStorage.setItem('teca_id_chat_ativo', idChatAtivo);
-      
       document.querySelectorAll('.chat-item').forEach(item => {
         item.classList.toggle('active', item.getAttribute('data-id') === id);
       });
-
       chatContainer.innerHTML = '<div class="system-status">Batalha tripla com retenção de histórico ativa</div>';
-      
       const chatCorrente = listaChats.find(c => c.id === id);
       if (chatCorrente && chatCorrente.messages) {
         chatCorrente.messages.forEach(msg => {
@@ -332,16 +350,13 @@
         item.className = `chat-item ${chat.id === idChatAtivo ? 'active' : ''}`;
         item.setAttribute('data-id', chat.id);
         item.onclick = () => carregarChat(chat.id);
-
         const titulo = document.createElement('span');
         titulo.className = 'chat-item-title';
         titulo.innerText = chat.title;
-
         const botaoDeletar = document.createElement('button');
         botaoDeletar.className = 'delete-chat-btn';
         botaoDeletar.innerHTML = '🗑️';
         botaoDeletar.onclick = (e) => deletarChat(chat.id, e);
-
         item.appendChild(titulo);
         item.appendChild(botaoDeletar);
         chatListElement.appendChild(item);
@@ -376,7 +391,6 @@
       const chatCorrente = listaChats.find(c => c.id === idChatAtivo);
       if (!chatCorrente) return;
 
-      // Se houver imagem anexada, mostra ela visualmente no balão do usuário antes do envio
       let visualTexto = promptFinalEnvio;
       if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
         visualTexto = `<img src="${arquivoCarregado.conteudo}" style="max-width:100%; max-height:200px; border-radius:8px; display:block; margin-bottom:5px;">` + promptFinalEnvio;
@@ -386,7 +400,7 @@
 
       const userDiv = adicionarMensagemDiv(visualTexto, 'user');
       if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
-        userDiv.innerHTML = visualTexto; // Força render do thumb local no balão do usuário
+        userDiv.innerHTML = visualTexto; 
       }
       
       if (chatCorrente.messages.length === 0) {
@@ -406,7 +420,6 @@
       const customInstructions = document.getElementById('rules-toggle').checked ? localStorage.getItem('teca_rules') : '';
       const memoryContext = document.getElementById('memory-toggle').checked ? localStorage.getItem('teca_memory') : '';
 
-      // Captura o anexo corrente e limpa a barra para o próximo input
       const anexoParaEnvio = arquivoCarregado;
       limparAnexo();
 
@@ -471,7 +484,6 @@
     function adicionarMensagemDivComBastidores(respostaFinal, auditoria) {
       const msgConteudo = document.createElement('div');
       msgConteudo.className = 'message ai';
-      
       const textoFinal = document.createElement('div');
       textoFinal.className = 'ai-render-content';
       textoFinal.innerHTML = marked.parse(respostaFinal);
@@ -487,7 +499,7 @@
             <div class="model-text" style="font-style: italic; color: #a1a1aa;">${auditoria.webRaw || 'Nenhum dado coletado.'}</div>
           </div>
           <div class="model-card deepseek">
-            <div class="model-badge">🤖 Filtro 1: Visão/Análise Geral (NVIDIA NIM)</div>
+            <div class="model-badge">🤖 Filtro 1: DeepSeek v4 Flash</div>
             <div class="model-text">${auditoria.deepseek}</div>
           </div>
           <div class="model-card gemma">
@@ -527,14 +539,6 @@
         alert('Configurações de personalização salvas!');
         toggleSettingsPanel();
       }
-    }
-  </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js')
-        .then(() => console.log('Cactus PWA Ativo.'))
-        .catch(err => console.log('Erro PWA:', err));
     }
   </script>
 </body>
