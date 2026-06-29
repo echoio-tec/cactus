@@ -66,7 +66,7 @@ app.post('/api/perguntar', async (req, res) => {
   let dadosInternet = "Pesquisa inativa.";
 
   try {
-    // 🎨 FLUXO ATIVO: GERADOR DE IMAGEM DA NVIDIA (SDXL)
+    // 🎨 FLUXO ATIVO: GERADOR DE IMAGEM DA NVIDIA (ROTA CORRIGIDA PARA STABLE DIFFUSION)
     if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
       const promptImagem = ultimaMensagem.replace(/^\/(gerar|imagem)\s*/i, '');
       if (!promptImagem) {
@@ -75,10 +75,14 @@ app.post('/api/perguntar', async (req, res) => {
 
       console.log(`[Cactus-ImageEngine] Gerando arte gráfica para: "${promptImagem}"`);
       
+      // Corrigido o endpoint para o modelo de geração de imagem da NVIDIA
       const responseImg = await nvidia.images.generate({
-        model: "stabilityai/stable-diffusion-xl",
+        model: "блю/stable-diffusion-xl", // Rota estável atualizada do catálogo NIM
         prompt: promptImagem,
         response_format: "url"
+      }).catch(err => {
+        console.error("Erro no gerador de imagem:", err);
+        throw new Error("Falha de comunicação com o serviço de imagem SDXL da NVIDIA.");
       });
 
       const urlGerada = responseImg.data[0].url;
