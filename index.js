@@ -15,7 +15,7 @@ const nvidia = new OpenAI({
   timeout: 45000 
 });
 
-// Junta turnos seguidos do mesmo remetente para evitar erros de barramento
+// Junta turnos seguidos do mesmo remetente para evitar erros de barramento no Mixtral/Gemma
 function sanitizarHistorico(historico) {
   const limpo = [];
   for (const msg of historico) {
@@ -66,7 +66,7 @@ app.post('/api/perguntar', async (req, res) => {
   let dadosInternet = "Pesquisa inativa.";
 
   try {
-    // FLUXO 1: GERAÇÃO DE IMAGEM DESATIVADA CONFORME DIRETRIZ
+    // GERAÇÃO DE IMAGEM DESATIVADA CONFORME DIRETRIZ
     if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
       return res.json({ respostaFinal: "Geração de imagens desativada pelo administrador temporariamente.", auditoria: { deepseek: "N/A", gemma: "N/A", llama8b: "N/A", webRaw: "N/A" } });
     }
@@ -90,9 +90,8 @@ app.post('/api/perguntar', async (req, res) => {
     let chamadaDeepSeek, chamadaGemma, chamadaLlama8b;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
-      console.log("[Cactus-Engine] Disparando ringue analítico com blindagem de prompt de visão.");
+      console.log("[Cactus-Engine] Disparando ringue analítico com suporte a imagem.");
       
-      // ⚡ ANCORAGEM RIGIDIZADA: Força o modelo de visão a ler a imagem e ignora ambiguidades de nomes próprios
       const promptVisaoPuro = [
         { role: "system", content: sistemaTexto + "\n\nVocê é a capacidade de visão do Cactus. Sua tarefa obrigatória e principal é ler todo o texto (OCR), marcas, títulos e dados presentes na imagem enviada e responder estritamente em PORTUGUÊS (PT-BR)." },
         {
@@ -109,7 +108,6 @@ app.post('/api/perguntar', async (req, res) => {
         ...historicoSanitizado
       ];
 
-      // Disparo em paralelo substituindo o Mixtral pela estável e veloz Gemma 2 27B
       [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(err => ({ error: true, message: "Erro ao carregar módulo de visão." })),
         nvidia.chat.completions.create({ model: "google/gemma-2-27b-it", messages: promptTextoCego }).catch(err => ({ error: true, message: "Filtro Gemma instável." })),
@@ -125,11 +123,11 @@ app.post('/api/perguntar', async (req, res) => {
       ]);
     }
 
+    // ⚡ CORREÇÃO DOS NOMES DAS VARIÁVEIS (ch vs ll corrigidos)
     const res1 = chamadaDeepSeek.error ? chamadaDeepSeek.message : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
     const res2 = chamadaGemma.error ? chamadaGemma.message : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
-    const res3 = llamadaLlama8b.error ? chamadaLlama8b.message : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
+    const res3 = chamadaLlama8b.error ? chamadaLlama8b.message : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
-    // O Juiz avalia sabendo que se houver imagem, a Opção 1 (Visão) é a dona da verdade real
     const promptJuiz = `
 Você é o Juiz do Cactus. Avalie as três respostas e retorne a melhor e mais didática resposta estruturada em PORTUGUÊS (PT-BR).
 Se houver uma imagem em jogo, dê total prioridade à Opção 1, contanto que ela descreva elementos visuais reais, pois as outras opções são cegas por design.
@@ -142,12 +140,12 @@ Opção 2 (Gemma Textual): ${res2}
 Opção 3 (Llama Textual): ${res3}
     `;
 
-    const llamadaJuiz = await nvidia.chat.completions.create({
+    const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.1-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(() => null);
 
-    const respostaVencedora = (llamadaJuiz && llamadaJuiz.choices?.[0]?.message?.content) ? llamadaJuiz.choices[0].message.content : res1;
+    const respostaVencedora = (chamadaJuiz && !chamadaJuiz.error && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : res1;
 
     res.json({
       respostaFinal: respostaVencedora,
@@ -160,4 +158,4 @@ Opção 3 (Llama Textual): ${res3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus] Motor corrigido na porta ${PORT}`));
