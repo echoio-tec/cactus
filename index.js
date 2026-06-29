@@ -15,7 +15,7 @@ const nvidia = new OpenAI({
   timeout: 45000 
 });
 
-// Junta turnos seguidos do mesmo remetente para evitar erros de barramento no Mixtral/Gemma
+// Higienização e mesclagem de mensagens consecutivas
 function sanitizarHistorico(historico) {
   const limpo = [];
   for (const msg of historico) {
@@ -64,80 +64,76 @@ app.post('/api/perguntar', async (req, res) => {
   const historicoSanitizado = sanitizarHistorico(historico);
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
   let dadosInternet = "Pesquisa inativa.";
+  let decolagemVisaoTexto = "";
 
   try {
-    // GERAÇÃO DE IMAGEM DESATIVADA CONFORME DIRETRIZ
-    if (ultimaMensagem.toLowerCase().startsWith('/gerar') || ultimaMensagem.toLowerCase().startsWith('/imagem')) {
-      return res.json({ respostaFinal: "Geração de imagens desativada pelo administrador temporariamente.", auditoria: { deepseek: "N/A", gemma: "N/A", llama8b: "N/A", webRaw: "N/A" } });
+    // ESTÁGIO 1: EXTRAÇÃO MULTIMODAL ULTRA-RÁPIDA (OS OLHOS)
+    if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
+      console.log("[Cactus-Vision] Mapeando dados estruturados da imagem...");
+      try {
+        const ocrMapeamento = await nvidia.chat.completions.create({
+          model: "meta/llama-3.2-11b-vision-instruct",
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: "Transcreva de forma exaustiva e rigorosa todas as palavras, títulos, colunas, números, escalas e dados presentes nesta imagem. Forneça uma descrição puramente factual e estruturada do conteúdo visual para processamento analítico posterior." },
+                { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
+              ]
+            }
+          ]
+        });
+        decolagemVisaoTexto = ocrMapeamento.choices?.[0]?.message?.content || "";
+        console.log("[Cactus-Vision] Sucesso na extração visual.");
+      } catch (errVision) {
+        console.error("Falha no canal de visão:", errVision);
+        decolagemVisaoTexto = "Erro técnico ao processar metadados da imagem.";
+      }
     }
 
     // CONFIGURAÇÃO DA DIRETRIZ MASTER DO CACTUS
-    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial avançado, forte, resiliente e prestativo. Nunca diga que você é o DeepSeek, Mistral, Google, Gemma ou Llama. Se o usuário perguntar seu nome, quem criou você ou onde você está rodando, responda sempre com orgulho que você é o Cactus.";
+    let sistemaTexto = "Seu nome é Cactus. Você é um analista de inteligência artificial de elite, de nível sênior, altamente focado, profissional e profundo. Suas respostas devem possuir forte maturidade acadêmica, excelente contextualização técnica e rigor intelectual. Evite resumos superficiais, obviedades ou respostas puramente literais.";
 
-    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA ATIVA SOBRE O USUÁRIO]:\n${memoryContext}`;
-    if (customInstructions) sistemaTexto += `\n\n[INSTRUÇÕES ESTREITAS DE ESTILO]:\n${customInstructions}`;
+    if (memoryContext) sistemaTexto += `\n\n[CONHECIMENTO ESTABELECIDO SOBRE O USUÁRIO]:\n${memoryContext}`;
+    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZES DE FORMATAÇÃO EXIGIDAS]:\n${customInstructions}`;
+    
+    // Injeção cruzada: Os cérebros textuais agora ganham acesso total ao que estava na imagem!
+    if (decolagemVisaoTexto) {
+      sistemaTexto += `\n\n[DADOS REAIS EXTRAÍDOS DA IMAGEM ENVIADA]:\n${decolagemVisaoTexto}\n\nNota: Use as informações acima para construir uma explicação contextualizada, profunda, técnica e científica sobre o assunto abordado na imagem.`;
+    }
+    if (arquivoAnexo && arquivoAnexo.tipo === 'texto') {
+      sistemaTexto += `\n\n[CONTEÚDO DO ARQUIVO ANEXADO]:\n${arquivoAnexo.conteudo}`;
+    }
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
-      sistemaTexto += `\n\n[CONTEXTO ATUALIZADO DA INTERNET]:\n${dadosInternet}`;
+      sistemaTexto += `\n\n[PESQUISA WEB EM TEMPO REAL]:\n${dadosInternet}`;
     }
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
 
-    if (arquivoAnexo && arquivoAnexo.tipo === 'texto') {
-      promptTextualPuro.push({ role: "system", content: `[CONTEÚDO DO ARQUIVO DE TEXTO ANEXADO ${arquivoAnexo.nome}]:\n${arquivoAnexo.conteudo}` });
-    }
+    // ESTÁGIO 2: O RINGUE DOS CÉREBROS (DeepSeek + Gemma 2 + Llama 3.1 processando os dados extraídos)
+    console.log("[Cactus-Engine] Disparando batalha tripla de alta performance.");
+    const [chamadaDeepSeek, llamadaGemma, chamadaLlama8b] = await Promise.all([
+      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
+      nvidia.chat.completions.create({ model: "google/gemma-2-27b-it", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
+      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message }))
+    ]);
 
-    let chamadaDeepSeek, chamadaGemma, chamadaLlama8b;
-
-    if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
-      console.log("[Cactus-Engine] Disparando ringue analítico com suporte a imagem.");
-      
-      const promptVisaoPuro = [
-        { role: "system", content: sistemaTexto + "\n\nVocê é a capacidade de visão do Cactus. Sua tarefa obrigatória e principal é ler todo o texto (OCR), marcas, títulos e dados presentes na imagem enviada e responder estritamente em PORTUGUÊS (PT-BR)." },
-        {
-          role: "user",
-          content: [
-            { type: "text", text: `O usuário anexou uma imagem e deu a seguinte instrução: "${ultimaMensagem}". ATENÇÃO: Faça a leitura detalhada das palavras escritas na imagem e use esses dados textuais reais para responder à instrução do usuário de forma didática e completa.` },
-            { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
-          ]
-        }
-      ];
-
-      const promptTextoCego = [
-        { role: "system", content: sistemaTexto + "\n\n[ALERTA RÍGIDO]: O usuário enviou uma imagem agora. Como você é um modelo puramente textual e não tem acesso aos olhos de visão do Cactus, responda estritamente avisando que não possui acesso direto à imagem e que está aguardando a consolidação do filtro de visão do Cactus." },
-        ...historicoSanitizado
-      ];
-
-      [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
-        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(err => ({ error: true, message: "Erro ao carregar módulo de visão." })),
-        nvidia.chat.completions.create({ model: "google/gemma-2-27b-it", messages: promptTextoCego }).catch(err => ({ error: true, message: "Filtro Gemma instável." })),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(err => ({ error: true, message: "Filtro Llama instável." }))
-      ]);
-
-    } else {
-      console.log("[Cactus-Engine] Disparando ringue textual padrão.");
-      [chamadaDeepSeek, chamadaGemma, chamadaLlama8b] = await Promise.all([
-        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
-        nvidia.chat.completions.create({ model: "google/gemma-2-27b-it", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message })),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(err => ({ error: true, message: err.message }))
-      ]);
-    }
-
-    // ⚡ CORREÇÃO DOS NOMES DAS VARIÁVEIS (ch vs ll corrigidos)
     const res1 = chamadaDeepSeek.error ? chamadaDeepSeek.message : (chamadaDeepSeek.choices?.[0]?.message?.content || "Vazio.");
-    const res2 = chamadaGemma.error ? chamadaGemma.message : (chamadaGemma.choices?.[0]?.message?.content || "Vazio.");
+    const res2 = llamadaGemma.error ? llamadaGemma.message : (llamadaGemma.choices?.[0]?.message?.content || "Vazio.");
     const res3 = chamadaLlama8b.error ? chamadaLlama8b.message : (chamadaLlama8b.choices?.[0]?.message?.content || "Vazio.");
 
+    // ESTÁGIO 3: O VEREDITO ACADÊMICO (Llama 70B exige nível profissional superior)
     const promptJuiz = `
-Você é o Juiz do Cactus. Avalie as três respostas e retorne a melhor e mais didática resposta estruturada em PORTUGUÊS (PT-BR).
-Se houver uma imagem em jogo, dê total prioridade à Opção 1, contanto que ela descreva elementos visuais reais, pois as outras opções são cegas por design.
-Retorne APENAS o texto limpo da escolhida, sem metalinguagem.
+Você é o Avaliador-Chefe do ecossistema Cactus. Analise as três opções de resposta geradas pelo nosso painel de agentes e selecione a que possui o maior nível de profundidade, qualidade técnica, excelência acadêmica e profissionalismo.
+Rejeite terminantemente respostas preguiçosas, rasas, puramente descritivas ou que apenas repitam o texto em tópicos simples. Escolha a resposta que realmente ensina e contextualiza o assunto com maturidade científica e responda obrigatoriamente em português.
+Retorne APENAS o texto completo e exato da resposta vencedora, sem comentários ou justificativas.
 
-Pergunta: "${ultimaMensagem}"
+Comando do Usuário: "${ultimaMensagem}"
 
-Opção 1 (Especialista com Olhos): ${res1}
-Opção 2 (Gemma Textual): ${res2}
-Opção 3 (Llama Textual): ${res3}
+Opção 1: ${res1}
+Opção 2: ${res2}
+Opção 3: ${res3}
     `;
 
     const chamadaJuiz = await nvidia.chat.completions.create({
@@ -145,11 +141,11 @@ Opção 3 (Llama Textual): ${res3}
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(() => null);
 
-    const respostaVencedora = (chamadaJuiz && !chamadaJuiz.error && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : res1;
+    const respostaVencedora = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : res1;
 
     res.json({
       respostaFinal: respostaVencedora,
-      auditoria: { deepseek: res1, gemma: res2, llama8b: res3, webRaw: arquivoAnexo ? `Arquivo Processado: ${arquivoAnexo.nome}` : "Nenhum anexo." }
+      auditoria: { deepseek: res1, gemma: res2, llama8b: res3, webRaw: arquivoAnexo ? `Fusão Multimodal Ativa: ${arquivoAnexo.nome}` : "Nenhum anexo." }
     });
 
   } catch (error) {
@@ -158,4 +154,4 @@ Opção 3 (Llama Textual): ${res3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Motor corrigido na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Engine] Ativo com pipeline de fusão na porta ${PORT}`));
