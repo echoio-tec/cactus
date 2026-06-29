@@ -5,9 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Cactus - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  
   <link rel="manifest" href="manifest.json">
-  
   <style>
     :root {
       --bg-color: #0b0b0c;
@@ -46,12 +44,7 @@
     header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; height: 65px; }
     .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
     
-    /* Tamanho ideal de 50px aprovado para a Logo */
-    .logo-header {
-      height: 50px; 
-      width: auto;
-      display: block;
-    }
+    .logo-header { height: 50px; width: auto; display: block; }
     
     .menu-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
     .settings-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa; padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
@@ -361,10 +354,11 @@
         }
 
       } catch (error) {
+        // ⚡ TRATAMENTO RESILIENTE: Informa inteligentemente o estado do Render Free Tier
         loadingDiv.remove();
         chatCorrente.messages.pop();
         salvarChatsNoNavegador();
-        adicionarMensagemDiv('Erro de conexão com o servidor.', 'ai');
+        adicionarMensagemDiv('O servidor do Cactus pode estar acordando da hibernação automática (Render Free Tier) ou a conexão oscilou. Aguarde cerca de 30 segundos e envie sua mensagem novamente! 🌵✨', 'ai');
         console.error(error);
       }
 
@@ -374,6 +368,7 @@
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
+    // [Restante das funções auxiliares mantidas intactas...]
     function adicionarMensagemDiv(texto, remetente) {
       const div = document.createElement('div');
       div.className = `message ${remetente}`;
@@ -398,7 +393,7 @@
       msgConteudo.appendChild(textoFinal);
 
       const detalhes = document.createElement('details');
-      details.className = 'backstage';
+      detalhes.className = 'backstage';
       detalhes.innerHTML = `
         <summary>🔍 Ver os bastidores da decisão</summary>
         <div class="backstage-content">
