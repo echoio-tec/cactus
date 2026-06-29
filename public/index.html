@@ -25,6 +25,8 @@
     body { background-color: var(--bg-color); color: var(--text-color); display: flex; height: 100vh; height: 100dvh; overflow: hidden; }
 
     #sidebar { width: 260px; background-color: var(--sidebar-bg); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; padding: 16px; gap: 16px; flex-shrink: 0; transition: transform 0.3s ease; z-index: 1000; }
+    body.sidebar-closed #sidebar { transform: translateX(-100%); margin-right: -260px; }
+    
     .new-chat-btn { background: transparent; border: 1px dashed #3f3f46; color: #fff; padding: 12px; border-radius: 12px; font-weight: 600; font-size: 0.9rem; cursor: pointer; text-align: left; transition: all 0.2s; }
     .new-chat-btn:hover { border-color: var(--accent-color); background: rgba(118, 185, 0, 0.05); }
 
@@ -38,11 +40,12 @@
     .delete-chat-btn:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 
     #sidebar-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(4px); z-index: 999; }
+    body.sidebar-open #sidebar-overlay { display: block; }
 
     #main-content { flex: 1; display: flex; flex-direction: column; height: 100%; background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%); min-width: 0; }
 
     header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; height: 65px; position: relative; }
-    .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
+    .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; height: 100%; }
     
     .logo-header { height: 50px; width: auto; display: block; }
     
@@ -51,7 +54,6 @@
 
     #settings-panel { display: none; position: absolute; top: 65px; right: 16px; z-index: 1001; background: #121214; border: 1px solid var(--border-color); max-width: 450px; width: calc(100% - 32px); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
     .panel-section { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #1f1f22; }
-    .panel-section:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
     .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
     .section-title { font-size: 0.9rem; font-weight: 700; color: #fff; }
     
@@ -68,13 +70,13 @@
     #chat-container { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
     .message { padding: 12px 16px; border-radius: 20px; max-width: 85%; line-height: 1.5; font-size: 0.95rem; word-wrap: break-word; }
     .user { background-color: var(--user-msg); align-self: flex-end; border-bottom-right-radius: 4px; color: #fff; }
-    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 90%; }
+    .ai { background-color: var(--chat-bg); align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid var(--border-color); width: 100%; max-width: 95%; }
 
-    .ai-render-content img { max-width: 100%; max-height: 350px; border-radius: 12px; margin-top: 8px; border: 1px solid var(--border-color); display: block; }
+    .ai-render-content img { max-width: 100%; max-height: 400px; border-radius: 12px; margin-top: 8px; border: 1px solid var(--border-color); display: block; }
     .ai-render-content h1, .ai-render-content h2, .ai-render-content h3 { color: var(--accent-color); margin: 12px 0 6px 0; font-size: 1.1rem; font-weight: 700; }
     .ai-render-content p { margin-bottom: 10px; color: #e4e4e7; }
-    .ai-render-content ul, .ai-render-content ol { margin-left: 18px; margin-bottom: 10px; display: flex; flex-direction: column; gap: 4px; }
-    .ai-render-content li { color: #e4e4e7; }
+    .ai-render-content ul, .ai-render-content ol { margin-left: 18px; margin-bottom: 10px; }
+    .ai-render-content li { color: #e4e4e7; margin-bottom: 4px; }
 
     .system-status { align-self: center; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: #a1a1aa; background: #18181b; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color); text-align: center; }
 
@@ -107,7 +109,6 @@
     button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
     .disclaimer { font-size: 0.72rem; color: #71717a; text-align: center; padding-bottom: 10px; background-color: var(--bg-color); flex-shrink: 0; width: 100%; }
-
     .pulse { animation: pulseText 1.5s infinite ease-in-out; color: var(--accent-color); }
     @keyframes pulseText { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
     
@@ -115,12 +116,10 @@
       #sidebar { position: fixed; top: 0; bottom: 0; left: 0; transform: translateX(-100%); width: 260px; }
       body.sidebar-open #sidebar { transform: translateX(0); }
       body.sidebar-open #sidebar-overlay { display: block; }
-      .message { max-width: 90%; }
-      .ai { max-width: 100%; }
     }
   </style>
 </head>
-<body>
+<body class="sidebar-open">
 
   <div id="sidebar-overlay" onclick="toggleSidebar()"></div>
 
@@ -225,7 +224,6 @@
       if (!file) return;
 
       const reader = new FileReader();
-      
       if (file.type.startsWith('image/')) {
         reader.onload = function(e) {
           const img = new Image();
@@ -234,24 +232,13 @@
             let width = img.width;
             let height = img.height;
             const MAX_SIZE = 1024; 
-
             if (width > height) {
-              if (width > MAX_SIZE) {
-                height *= MAX_SIZE / width;
-                width = MAX_SIZE;
-              }
+              if (width > MAX_SIZE) { height *= MAX_SIZE / width; width = MAX_SIZE; }
             } else {
-              if (height > MAX_SIZE) {
-                width *= MAX_SIZE / height;
-                height = MAX_SIZE;
-              }
+              if (height > MAX_SIZE) { width *= MAX_SIZE / height; height = MAX_SIZE; }
             }
-
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, width, height);
-
+            canvas.width = width; canvas.height = height;
+            canvas.getContext('2d').drawImage(img, 0, 0, width, height);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
             
             arquivoCarregado = { tipo: 'imagem', nome: file.name, conteudo: dataUrl };
@@ -283,8 +270,11 @@
       document.getElementById('preview-attachment-box').style.display = 'none';
     }
 
-    function toggleSidebar() { document.body.classList.toggle('sidebar-open'); }
-    function fecharSidebarNoCelular() { document.body.classList.remove('sidebar-open'); }
+    function toggleSidebar() { 
+      document.body.classList.toggle('sidebar-closed');
+      document.body.classList.toggle('sidebar-open');
+    }
+    function fecharSidebarNoCelular() { document.body.classList.remove('sidebar-open'); document.body.classList.add('sidebar-closed'); }
 
     function toggleWebSearch() {
       pesquisaWebAtiva = !pesquisaWebAtiva;
@@ -322,22 +312,7 @@
           }
         });
       }
-      fecharSidebarNoCelular(); 
       chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    function deleteChat(id, event) {
-      event.stopPropagation();
-      listaChats = listaChats.filter(c => c.id !== id);
-      if (listaChats.length === 0) {
-        localStorage.clear();
-        criarNovoChat();
-        return;
-      }
-      if (idChatAtivo === id) idChatAtivo = listaChats[0].id;
-      salvarChatsNoNavegador();
-      renderizarBarraLateral();
-      carregarChat(idChatAtivo);
     }
 
     function renderizarBarraLateral() {
@@ -355,7 +330,7 @@
         const botaoDeletar = document.createElement('button');
         botaoDeletar.className = 'delete-chat-btn';
         botaoDeletar.innerHTML = '🗑️';
-        botaoDeletar.onclick = (e) => deleteChat(chat.id, e);
+        botaoDeletar.onclick = (e) => { e.stopPropagation(); deleteChat(chat.id, e); };
 
         item.appendChild(titulo);
         item.appendChild(botaoDeletar);
@@ -369,10 +344,7 @@
     }
 
     userInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        enviarPergunta();
-      }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarPergunta(); }
     });
 
     async function enviarPergunta() {
@@ -380,9 +352,7 @@
       if (!texto && !arquivoCarregado) return;
 
       let promptFinalEnvio = texto;
-      if (!texto && arquivoCarregado) {
-        promptFinalEnvio = `Analise este arquivo anexado: ${arquivoCarregado.nome}`;
-      }
+      if (!texto && arquivoCarregado) { promptFinalEnvio = `Analise este arquivo: ${arquivoCarregado.nome}`; }
 
       userInput.value = '';
       userInput.disabled = true;
@@ -394,14 +364,9 @@
       let visualTexto = promptFinalEnvio;
       if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
         visualTexto = `<img src="${arquivoCarregado.conteudo}" style="max-width:100%; max-height:200px; border-radius:8px; display:block; margin-bottom:5px;">` + promptFinalEnvio;
-      } else if (arquivoCarregado && arquivoCarregado.tipo === 'texto') {
-        visualTexto = `📄 *[Arquivo: ${arquivoCarregado.nome}]*\n\n` + promptFinalEnvio;
       }
 
-      const userDiv = adicionarMensagemDiv(visualTexto, 'user');
-      if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
-        userDiv.innerHTML = visualTexto; 
-      }
+      adicionarMensagemDiv(visualTexto, 'user');
       
       if (chatCorrente.messages.length === 0) {
         chatCorrente.title = promptFinalEnvio.length > 20 ? promptFinalEnvio.substring(0, 20) + '...' : promptFinalEnvio;
@@ -413,13 +378,7 @@
 
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'message ai pulse';
-      
-      if (promptFinalEnvio.toLowerCase().startsWith('/gerar') || promptFinalEnvio.toLowerCase().startsWith('/imagem')) {
-        loadingDiv.innerText = '🎨 Desenhando e gerando imagem via IA...';
-      } else {
-        loadingDiv.innerText = 'Processando dados multimodais...';
-      }
-      
+      loadingDiv.innerText = (promptFinalEnvio.toLowerCase().startsWith('/gerar') || promptFinalEnvio.toLowerCase().startsWith('/imagem')) ? '🎨 Desenhando e gerando imagem via IA...' : 'Processando dados multimodais...';
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -447,24 +406,16 @@
 
         if (data.error) {
           chatCorrente.messages.pop();
-          salvarChatsNoNavegador();
           adicionarMensagemDiv('Ops! Problema ao consultar o Cactus. Detalhe: ' + data.error, 'ai');
         } else {
-          chatCorrente.messages.push({ 
-            role: 'assistant', 
-            content: data.respostaFinal,
-            auditoria: data.auditoria 
-          });
+          chatCorrente.messages.push({ role: 'assistant', content: data.respostaFinal, auditoria: data.auditoria });
           salvarChatsNoNavegador();
           adicionarMensagemDivComBastidores(data.respostaFinal, data.auditoria);
         }
-
       } catch (error) {
         loadingDiv.remove();
         chatCorrente.messages.pop();
-        salvarChatsNoNavegador();
-        adicionarMensagemDiv('Erro de barramento ou timeout na API.', 'ai');
-        console.error(error);
+        adicionarMensagemDiv('Erro crítico de barramento ou timeout.', 'ai');
       }
 
       userInput.disabled = false;
@@ -476,12 +427,8 @@
     function adicionarMensagemDiv(texto, remetente) {
       const div = document.createElement('div');
       div.className = `message ${remetente}`;
-      if (remetente === 'user') {
-        div.innerText = texto;
-      } else {
-        div.className += ' ai-render-content';
-        div.innerHTML = marked.parse(texto);
-      }
+      if (remetente === 'user') { div.innerHTML = texto; } 
+      else { div.className += ' ai-render-content'; div.innerHTML = marked.parse(texto); }
       chatContainer.appendChild(div);
       chatContainer.scrollTop = chatContainer.scrollHeight;
       return div;
@@ -529,19 +476,12 @@
       panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     }
 
-    function toggleSidebar() {
-      document.body.classList.toggle('sidebar-open');
-    }
-
     function saveSettings(alertUser = false) {
       localStorage.setItem('teca_rules', document.getElementById('rules-input').value);
       localStorage.setItem('teca_memory', document.getElementById('memory-input').value);
       localStorage.setItem('teca_rules_enabled', document.getElementById('rules-toggle').checked);
       localStorage.setItem('teca_memory_enabled', document.getElementById('memory-toggle').checked);
-      if(alertUser) {
-        alert('Configurações salvas com sucesso!');
-        toggleSettingsPanel();
-      }
+      if(alertUser) { alert('Configurações salvas!'); toggleSettingsPanel(); }
     }
   </script>
 </body>
