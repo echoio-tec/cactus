@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Cactus - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  
+  <link rel="manifest" href="manifest.json">
+  
   <style>
     :root {
       --bg-color: #0b0b0c;
@@ -40,17 +43,17 @@
 
     #main-content { flex: 1; display: flex; flex-direction: column; height: 100%; background-image: radial-gradient(circle at 50% -20%, #1e2905 0%, transparent 50%); min-width: 0; }
 
-    header { padding: 14px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; }
-    .header-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    header { padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: rgba(18, 18, 20, 0.6); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-shrink: 0; height: 65px; }
+    .header-left { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; }
     
-    /* Estilização da Imagem da Logo no Cabeçalho */
+    /* Tamanho ideal de 50px aprovado para a Logo */
     .logo-header {
-      height: 50px;
+      height: 50px; 
       width: auto;
       display: block;
     }
     
-    .menu-toggle-btn { display: none; background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+    .menu-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #fff; font-size: 1.2rem; padding: 6px 12px; border-radius: 8px; cursor: pointer; flex-shrink: 0; }
     .settings-toggle-btn { background: #18181b; border: 1px solid var(--border-color); color: #a1a1aa; padding: 8px 12px; border-radius: 14px; font-size: 0.78rem; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 
     #settings-panel { display: none; position: absolute; top: 65px; right: 16px; z-index: 1001; background: #121214; border: 1px solid var(--border-color); max-width: 450px; width: calc(100% - 32px); border-radius: 16px; padding: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
@@ -114,7 +117,7 @@
       body.sidebar-open #sidebar-overlay { display: block; }
       .message { max-width: 90%; }
       .ai { max-width: 100%; }
-      .logo-header { height: 30px; } /* Ajuste fino do tamanho da logo no celular */
+      .logo-header { height: 50px; } 
     }
   </style>
 </head>
@@ -209,7 +212,6 @@
     function toggleSidebar() { document.body.classList.toggle('sidebar-open'); }
     function fecharSidebarNoCelular() { document.body.classList.remove('sidebar-open'); }
 
-    // RETAIN WEB SEARCH TOGGLE STATE
     function toggleWebSearch() {
       pesquisaWebAtiva = !pesquisaWebAtiva;
       localStorage.setItem('teca_web_search', pesquisaWebAtiva);
@@ -396,7 +398,7 @@
       msgConteudo.appendChild(textoFinal);
 
       const detalhes = document.createElement('details');
-      detalhes.className = 'backstage';
+      details.className = 'backstage';
       detalhes.innerHTML = `
         <summary>🔍 Ver os bastidores da decisão</summary>
         <div class="backstage-content">
@@ -436,7 +438,6 @@
       }
     });
 
-    // REPLICATE ENHANCED LOCAL STORAGE SETTINGS
     function saveSettings(alertUser = false) {
       localStorage.setItem('teca_rules', document.getElementById('rules-input').value);
       localStorage.setItem('teca_memory', document.getElementById('memory-input').value);
@@ -446,6 +447,14 @@
         alert('Configurações de personalização salvas!');
         toggleSettingsPanel();
       }
+    }
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js')
+        .then(() => console.log('Cactus PWA: Pronto para instalação!'))
+        .catch(err => console.log('Erro ao registrar PWA:', err));
     }
   </script>
 </body>
