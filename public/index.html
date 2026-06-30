@@ -5,9 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Cactus - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <link rel="manifest" href="manifest.json">
   <style>
     :root {
@@ -210,9 +207,6 @@
   </div>
 
   <script>
-    // Configuração obrigatória do motor PDF.js para rodar em modo Thread isolada
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
-
     const chatContainer = document.getElementById('chat-container');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -227,53 +221,13 @@
       chatContainer.scrollTop = chatContainer.scrollHeight; 
     });
 
-    // 🔬 MOTORES DE EXTRAÇÃO TEXTUAL NATIVOS DO CLIENTE (ZERO SERVER LOAD)
-    function limitarEComprimirTextoDoc(texto) {
-      if (!texto) return "";
-      let limpo = texto.replace(/\s+/g, ' ').trim();
-      if (limpo.length > 15000) {
-        alert("⚠️ Documento muito extenso! Para preservar os créditos e a velocidade do Cactus, apenas os primeiros 15.000 caracteres serão analisados.");
-        limpo = limpo.substring(0, 15000) + "\n\n[CONTEÚDO TRUNCADO PELO SISTEMA DE SEGURANÇA PARA EVITAR ESTOURO DE CONTEXTO]";
-      }
-      return limpo;
-    }
-
-    async function extrairTextoPDF(arrayBuffer) {
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let textoCompleto = "";
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        textoCompleto += content.items.map(item => item.str).join(" ") + "\n";
-      }
-      return textoCompleto;
-    }
-
-    function extrairTextoExcel(arrayBuffer) {
-      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
-      let textoCompleto = "";
-      workbook.SheetNames.forEach(sheetName => {
-        textoCompleto += `\n--- Aba: ${sheetName} ---\n`;
-        textoCompleto += XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]) + "\n";
-      });
-      return textoCompleto;
-    }
-
-    async function extrairTextoWord(arrayBuffer) {
-      const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
-      return result.value;
-    }
-
+    // CORREÇÃO ULTRA-LIGHTWEIGHT: O celular não processa nada. Apenas lê em Base64 puro e delega o peso pro servidor.
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
 
-      document.getElementById('attachment-name-text').innerText = "⚡ Processando arquivo...";
-      document.getElementById('preview-attachment-box').style.display = 'flex';
-
       const reader = new FileReader();
-
-      // PIPELINE 1: PROCESSAMENTO VISUAL (IMAGENS)
+      
       if (file.type.startsWith('image/')) {
         reader.onload = function(e) {
           const img = new Image();
@@ -291,60 +245,14 @@
           img.src = e.target.result;
         };
         reader.readAsDataURL(file);
-      } 
-      // PIPELINE 2: PARSING DE PDF
-      else if (file.type === 'application/pdf') {
-        reader.onload = async function(e) {
-          try {
-            let texto = await extrairTextoPDF(e.target.result);
-            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
-            document.getElementById('attachment-img-preview').style.display = 'none';
-            mostrarBarraAnexo(`📄 ${file.name} (PDF Lido)`);
-          } catch (err) {
-            alert("Falha no leitor de PDF: " + err.message);
-            limparAnexo();
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      } 
-      // PIPELINE 3: PARSING DE EXCEL/PLANILHAS
-      else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.type === 'application/vnd.ms-excel' || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+      } else {
+        // Para qualquer documento (PDF, Excel, Word, TXT), lê como DataURL binário bruto e joga no payload de transmissão
         reader.onload = function(e) {
-          try {
-            let texto = extrairTextoExcel(e.target.result);
-            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
-            document.getElementById('attachment-img-preview').style.display = 'none';
-            mostrarBarraAnexo(`📊 ${file.name} (Planilha Lida)`);
-          } catch (err) {
-            alert("Falha no leitor de Planilhas: " + err.message);
-            limparAnexo();
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      } 
-      // PIPELINE 4: PARSING DE WORD (.docx)
-      else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
-        reader.onload = async function(e) {
-          try {
-            let texto = await extrairTextoWord(e.target.result);
-            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
-            document.getElementById('attachment-img-preview').style.display = 'none';
-            mostrarBarraAnexo(`📝 ${file.name} (Documento Lido)`);
-          } catch (err) {
-            alert("Falha no leitor do Word: " + err.message);
-            limparAnexo();
-          }
-        };
-        reader.readAsArrayBuffer(file);
-      } 
-      // PIPELINE 5: ARQUIVOS TEXTUAIS PADRÃO (.txt, .csv, .json)
-      else {
-        reader.onload = function(e) {
-          arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(e.target.result) };
+          arquivoCarregado = { tipo: 'documento', nome: file.name, conteudo: e.target.result };
           document.getElementById('attachment-img-preview').style.display = 'none';
-          mostrarBarraAnexo(file.name);
+          mostrarBarraAnexo(`📄 ${file.name} (Pronto para envio)`);
         };
-        reader.readAsText(file);
+        reader.readAsDataURL(file);
       }
     }
 
@@ -458,8 +366,8 @@
       let visualTexto = promptFinalEnvio;
       if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
         visualTexto = `<img src="${arquivoCarregado.conteudo}" style="max-width:100%; max-height:200px; border-radius:8px; display:block; margin-bottom:5px;">` + promptFinalEnvio;
-      } else if (arquivoCarregado && arquivoCarregado.tipo === 'texto') {
-        visualTexto = `📂 **Arquivo lido localmente:** \`${arquivoCarregado.nome}\`\n\n${promptFinalEnvio}`;
+      } else if (arquivoCarregado && arquivoCarregado.tipo === 'documento') {
+        visualTexto = `📂 **Documento enviado para análise:** \`${arquivoCarregado.nome}\`\n\n${promptFinalEnvio}`;
       }
 
       adicionarMensagemDiv(visualTexto, 'user');
@@ -476,9 +384,9 @@
       loadingDiv.className = 'message ai pulse';
       
       const pensamentosTextuais = [
-        "🔍 Mapeando payloads e preparando barramento multimodal...",
-        "🤖 Disparando ringue paralelo (DeepSeek Engine & Llama Visão)...",
-        "⚖️ Magistratura Ativa: Llama 3.3 70B arbitando veredito final..."
+        "🔍 Transmitindo binários e preparando barramento server-side...",
+        "🤖 Servidor extraindo texto e disparando ringue analítico...",
+        "⚖️ Magistratura Ativa: Llama 3.3 70B arbitrando veredito final..."
       ];
       
       loadingDiv.innerText = pensamentosTextuais[0];
@@ -523,7 +431,7 @@
         clearInterval(thoughtInterval);
         loadingDiv.remove(); 
         chatCorrente.messages.pop();
-        adicionarMensagemDiv('Falha crítica de comunicação com o cluster Render.', 'ai');
+        adicionarMensagemDiv('Falha crítica de comunicação com o cluster Render. O tempo limite da requisição expirou.', 'ai');
       }
 
       userInput.disabled = false;
@@ -583,15 +491,15 @@
             <div class="model-text" style="font-style: italic; color: #a1a1aa;">${auditoria.webRaw || 'Nenhum dado coletado.'}</div>
           </div>
           <div class="model-card deepseek">
-            <div class="model-badge">🤖 Filtro 1: Visão Computacional / Analítica NIM</div>
+            <div class="model-badge">🤖 Filtro 1: DeepSeek Engine Flash</div>
             <div class="model-text">${auditoria.deepseek || 'N/A'}</div>
           </div>
           <div class="model-card gemma">
-            <div class="model-badge">🤖 Filtro 2: DeepSeek Engine Flash</div>
+            <div class="model-badge">🤖 Filtro 2: Llama 3.1 8B Instruct</div>
             <div class="model-text">${auditoria.gemma || 'N/A'}</div>
           </div>
           <div class="model-card llama">
-            <div class="model-badge">🤖 Filtro 3: Llama 3.1 Instruct Core</div>
+            <div class="model-badge">🤖 Filtro 3: Llama 3.3 70B Core</div>
             <div class="model-text">${auditoria.llama8b || 'N/A'}</div>
           </div>
         </div>
