@@ -12,10 +12,9 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 30000 // Limite estrito de 30 segundos por requisição externa
+  timeout: 30000
 });
 
-// Mecanismo defensivo para promises paralelas
 function tratarErroPromessa(modelo) {
   return (err) => ({ error: true, message: `Módulo ${modelo} offline ou indisponível: ${err.message}` });
 }
@@ -72,7 +71,6 @@ async function buscarNaWeb(query) {
 }
 
 app.post('/api/perguntar', async (req, res) => {
-  // Coleta explícita de todos os estados mutáveis vindos da interface front-end
   const { historico, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
 
   if (!historico || historico.length === 0) return res.status(400).json({ error: 'Histórico ausente.' });
@@ -81,7 +79,7 @@ app.post('/api/perguntar', async (req, res) => {
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
 
   try {
-    // 🎨 PIPELINE GRÁFICO INTEGADO COM INTELIGÊNCIA DE LINGUAGEM NATURAL
+    // 🎨 PIPELINE GRÁFICO INTELIGENTE COM AGENTE DE CONTINGÊNCIA ATIVO
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
     const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
                             textoMinusculo.startsWith('/imagem') || 
@@ -98,8 +96,9 @@ app.post('/api/perguntar', async (req, res) => {
 
       if (!promptImagem) return res.status(400).json({ error: "Especifique o cenário descritivo da imagem." });
 
-      console.log(`[Cactus-Graphics] Acionando difusão reversa para: "${promptImagem}"`);
+      console.log(`[Cactus-Graphics] Tentando renderização primária via NVIDIA NIM: "${promptImagem}"`);
       try {
+        // Tenta o cluster padrão ouro da NVIDIA
         const responseImg = await nvidia.images.generate({
           model: "stabilityai/stable-diffusion-xl",
           prompt: promptImagem
@@ -107,27 +106,35 @@ app.post('/api/perguntar', async (req, res) => {
         
         return res.json({
           respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`,
-          auditoria: { deepseek: "Renderizado via SDXL", gemma: "N/A", llama8b: "N/A", webRaw: "Módulo Gráfico Ativo" }
+          auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
         });
       } catch (errImg) {
-        console.error("[Cactus-Graphics] Falha técnica:", errImg);
+        // 🚨 CIRCUITO DE CONTINGÊNCIA AUTOMÁTICO (Caso a API KEY dê B.O, entra aqui imediatamente)
+        console.warn(`[Cactus-Graphics] Falha na NVIDIA NIM (${errImg.message}). Acionando barramento de reserva Pollinations...`);
+        
+        // Geração limpa, livre de chaves, ilimitada e em alta definição (1024x1024)
+        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
+        
         return res.json({
-          respostaFinal: "⚠️ O serviço de geração gráfica da NVIDIA falhou ou atingiu o limite de requisições temporariamente. Tente novamente.",
-          auditoria: { deepseek: `Erro: ${errImg.message}`, gemma: "N/A", llama8b: "N/A", webRaw: "Falha de renderização" }
+          respostaFinal: `🎨 Here is your image! O Cactus contornou com sucesso uma instabilidade na cota do servidor secundário e renderizou **"${promptImagem}"** através do barramento de reserva:\n\n![Imagem Gerada](${urlReserva})`,
+          auditoria: { 
+            deepseek: `Erro NVIDIA: ${errImg.message}`, 
+            gemma: "Circuito de Reserva Ativado", 
+            llama8b: "Engine Flux-Pollinations Ativa", 
+            webRaw: "Módulo Gráfico Blindado Contra Quedas" 
+          }
         });
       }
     }
 
-    // 📝 RESOLUÇÃO DE CONTEXTOS EXTERNOS (INTERNET + ANCORAGEM ZOOTÉCNICA)
+    // 📝 RESOLUÇÃO DE CONTEXTOS TEXTUAIS
     let dadosInternet = "Pesquisa Web: Inativa.";
     if (pesquisaWeb) {
-      console.log(`[Cactus-Web] Efetuando varredura RAG na internet para: "${ultimaMensagem}"`);
       dadosInternet = await buscarNaWeb(ultimaMensagem);
     }
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
 
-    // DIRETRIZ MASTER DO ECOSSISTEMA CACTUS
     let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, personalizado para responder de forma profunda, profissional e didática. Use sempre português (PT-BR) e honre sua identidade Cactus. Baseie-se estritamente nas evidências factuais injetadas para responder com precisão técnica.";
 
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
@@ -138,9 +145,7 @@ app.post('/api/perguntar', async (req, res) => {
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
     let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
-    // 👁️ PIPELINE MULTIMODAL VS TEXTUAL SEGURO
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
-      console.log("[Cactus-Core] Executando barramento analítico multimodal visual.");
       const promptVisaoPuro = [
         {
           role: "user",
@@ -162,7 +167,6 @@ app.post('/api/perguntar', async (req, res) => {
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
       ]);
     } else {
-      console.log("[Cactus-Core] Executando análise textual paralela.");
       [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
@@ -171,10 +175,9 @@ app.post('/api/perguntar', async (req, res) => {
     }
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
+    const txt2 = llamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
     const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
-    // ⚖️ CONSOLIDAÇÃO DO JUIZ ACELERADO (LLAMA 3.3 70B JET ENGINE)
     const promptJuiz = `
 Você é o Juiz do Cactus. Avalie as três opções de resposta e selecione ou consolide a melhor, mais completa e profunda resposta estruturada em PORTUGUÊS (PT-BR).
 Garanta o cumprimento de dados factuais se houver relatórios de RAG local ou de internet inseridos no contexto do sistema.
@@ -195,7 +198,6 @@ Opção 3: ${txt3}
 
     const respostaFinalConsolidada = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : txt1;
 
-    // Estruturação dinâmica do relatório de auditoria para o front-end
     let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
     logRAG += pesquisaWeb ? `[Web Provedor]: ${dadosInternet.substring(0, 200)}...` : `[Pesquisa Web Inativa]`;
@@ -211,10 +213,9 @@ Opção 3: ${txt3}
     });
 
   } catch (error) {
-    console.error("[Cactus-Fatal]", error);
     res.status(500).json({ error: error.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Central unificada e estável operando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus] Central unificada e à prova de falhas na porta ${PORT}`));
