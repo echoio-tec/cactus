@@ -54,16 +54,14 @@ function sanitizarHistorico(historico) {
   return limpo;
 }
 
-// 📦 MOTOR DE COMPRESSÃO DE PROMPT (BÔNUS)
 function comprimirPrompt(texto) {
   if (!texto) return "";
   return texto
-    .replace(/\s+/g, ' ') // Elimina espaços duplicados e quebras de linha excessivas
-    .replace(/^(por favor|gentileza|por gentileza|obrigado|muito obrigado),?\s*/i, '') // Remove excessos de polidez
+    .replace(/\s+/g, ' ') 
+    .replace(/^(por favor|gentileza|por gentileza|obrigado|muito obrigado),?\s*/i, '') 
     .trim();
 }
 
-// 🧠 FILTRO DO ROUTER INTELIGENTE (FAST-PATH VS SLOW-PATH)
 function verificarMensagemTrivial(texto) {
   const t = texto.toLowerCase().trim();
   if (!t) return true;
@@ -74,7 +72,6 @@ function verificarMensagemTrivial(texto) {
     'entendi', 'perfeito', 'top', 'sim', 'nao', 'não', 'ajuda'
   ];
 
-  // Se a mensagem contiver menos de 3 palavras ou bater exatamente com a lista de saudações
   const totalPalavras = t.split(' ').length;
   if (totalPalavras <= 2) return true;
 
@@ -104,7 +101,6 @@ app.post('/api/perguntar', async (req, res) => {
   
   const historicoSanitizado = sanitizarHistorico(historico);
   
-  // Executa compressão direta no prompt de entrada do usuário
   if (historicoSanitizado.length > 0 && historicoSanitizado[historicoSanitizado.length - 1].role === 'user') {
     historicoSanitizado[historicoSanitizado.length - 1].content = comprimirPrompt(historicoSanitizado[historicoSanitizado.length - 1].content);
   }
@@ -137,7 +133,7 @@ app.post('/api/perguntar', async (req, res) => {
           auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
         });
       } catch (errImg) {
-        console.warn(`[Cactus-Graphics] Falha NVIDIA NIM. Acionando Pollinations transparentemente...`);
+        console.warn(`[Cactus-Graphics] Falha NVIDIA NIM. Acionando Pollinations...`);
         const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
         return res.json({
           respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`,
@@ -146,18 +142,18 @@ app.post('/api/perguntar', async (req, res) => {
       }
     }
 
-    // Definindo a persona base do Cactus
-    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, forte, prestativo e com rigor científico. Responda em português (PT-BR) de forma direta e sem enrolação.";
+    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, forte, prestativo e com rigor científico. Responda em português (PT-BR) de forma profunda, exata e sem enrolação.";
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
     // ⚡ BIFURCAÇÃO DO ROUTER: LINHA RÁPIDA (FAST-PATH)
+    // Se houver arquivo anexo (seja texto ou imagem), o Fast-Path é ignorado automaticamente para forçar leitura complexa
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
     if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
       console.log(`[Cactus-Router] Fast-Path Ativado para: "${ultimaMensagem}"`);
       
       const chamadaFastPath = await nvidia.chat.completions.create({
-        model: "deepseek-ai/deepseek-v4-flash", // Motor ultra-veloz para respostas cotidianas
+        model: "deepseek-ai/deepseek-v4-flash",
         messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta, natural e amigável em no máximo duas frases." }, ...historicoSanitizado],
         max_tokens: 120
       }).catch(tratarErroPromessa("DeepSeek-FastPath"));
@@ -180,12 +176,17 @@ app.post('/api/perguntar', async (req, res) => {
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
 
-    // Adiciona as fontes factuais ao prompt estruturado
+    // Injeção de Contextos de RAG externos no Prompt do Sistema
     if (pesquisaWeb) sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
+    
+    // 🛠️ NOVO ACOPLAMENTO DE ENGENHARIA DE PARSING DOC DO CLIENTE (PDF/EXCEL/WORD)
+    if (arquivoAnexo && arquivoAnexo.tipo === 'texto') {
+      sistemaTexto += `\n\n[CONTEÚDO DO ARQUIVO ANEXADO E EXTRAÍDO PELO CLIENTE (${arquivoAnexo.nome})]:\n${arquivoAnexo.conteudo}`;
+    }
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
-    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
+    let llamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       const promptVisaoPuro = [
@@ -196,27 +197,26 @@ app.post('/api/perguntar', async (req, res) => {
       ];
       const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento no canal de visão." }, ...historicoSanitizado];
 
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [llamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
       ]);
     } else {
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [llamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
       ]);
     }
 
-    const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
+    const txt1 = llamadaFiltro1.error ? llamadaFiltro1.message : (llamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
     const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
     const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
-    // ⚖️ MAGISTRATURA DE ALTA VELOCIDADE (LLAMA 3.3 70B JET ENGINE)
     const promptJuiz = `
 Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
-Garanta fidelidade aos relatórios de RAG local ou de internet inseridos no contexto do sistema se houver.
+Garanta fidelidade aos relatórios de RAG local, arquivos anexados de texto ou dados da internet inseridos no contexto do sistema se houver.
 Se houver imagem em análise, dê preferência absoluta à Opção 1 (Visão).
 Retorne APENAS o texto puro da resposta definitiva, sem metalinguagem.
 
@@ -229,13 +229,14 @@ Opção 3: ${txt3}
     const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.3-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }],
-      max_tokens: 800 // Limite de geração do Juiz para otimizar tempo de transmissão
+      max_tokens: 1000 
     }).catch(() => null);
 
     const respostaFinalConsolidada = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : txt1;
 
     let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
+    if (arquivoAnexo && arquivoAnexo.tipo === 'texto') logRAG += `[Doc Lido: ${arquivoAnexo.nome}] `;
     logRAG += pesquisaWeb ? `[Web Provedor]: ${dadosInternet.substring(0, 200)}...` : `[Pesquisa Web Inativa]`;
 
     res.json({
@@ -249,4 +250,4 @@ Opção 3: ${txt3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Operando com Router Inteligente ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando na porta ${PORT}`));
