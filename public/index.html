@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Cactus - O Agregador Inteligente</title>
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
   <link rel="manifest" href="manifest.json">
   <style>
     :root {
@@ -116,20 +119,16 @@
     .preview-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #3f3f46; display: none; }
     .remove-attachment-btn { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 1rem; padding: 0 4px; }
 
-    /* CORREÇÃO INTELIGENTE: Alinhamento de base (flex-end) para ancorar ícones conforme o input cresce */
     #input-container { padding: 4px 16px 4px 16px; width: 100%; display: flex; gap: 10px; align-items: flex-end; }
     .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: flex-end; padding: 0 12px 3px 4px; min-width: 0; }
     .input-wrapper:focus-within { border-color: var(--accent-color); }
     
-    /* Força os botões redondos internos a manterem uma margem simétrica constante na base */
     .icon-btn-input { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; color: #fff; margin-bottom: 2px; }
     .icon-btn-input:hover { opacity: 1; background: rgba(255,255,255,0.05); }
     .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); color: #0066ff; }
 
-    /* CORREÇÃO DE ELASTICIDADE: Remoção de height estático e inserção de max-height com contenção */
     textarea { flex: 1; background: transparent; border: none; padding: 12px 8px; color: var(--text-color); resize: none; height: 44px; max-height: 140px; outline: none; font-size: 0.95rem; overflow-y: hidden; }
 
-    /* Ancoragem estável do botão de envio no mesmo eixo inferior */
     button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; margin-bottom: 2px; }
     button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
@@ -198,8 +197,8 @@
 
       <div id="input-container">
         <div class="input-wrapper">
-          <button class="icon-btn-input" onclick="document.getElementById('file-input').click()" title="Anexar Foto">📎</button>
-          <input type="file" id="file-input" style="display: none;" onchange="processarArquivoLocal(this)" accept="image/*,text/plain,application/json,text/csv">
+          <button class="icon-btn-input" onclick="document.getElementById('file-input').click()" title="Anexar Arquivo">📎</button>
+          <input type="file" id="file-input" style="display: none;" onchange="processarArquivoLocal(this)" accept="image/*,text/plain,application/json,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
           
           <button id="web-toggle-btn" class="icon-btn-input web-search-toggle" onclick="toggleWebSearch()" title="Ativar Internet">🌐</button>
           <textarea id="user-input" placeholder="Faça uma pergunta ou use /gerar para criar imagens..." rows="1"></textarea>
@@ -211,6 +210,9 @@
   </div>
 
   <script>
+    // Configuração obrigatória do motor PDF.js para rodar em modo Thread isolada
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
     const chatContainer = document.getElementById('chat-container');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -218,54 +220,60 @@
 
     let listaChats = [], idChatAtivo = null, pesquisaWebAtiva = false, arquivoCarregado = null, thoughtInterval = null, botaoVozAtivo = null;
 
-    // 🛠️ ESCUTA DINÂMICA DE EXPANSÃO DA CAIXA DE TEXTO (AUTO-RESIZE CONTROLADO)
     userInput.addEventListener('input', function() {
-      this.style.height = '44px'; // Reseta temporariamente para obter o scrollHeight real
-      this.style.height = this.scrollHeight + 'px'; // Aplica a nova dimensão
-      
-      if (this.scrollHeight > 140) {
-        this.style.overflowY = 'auto'; // Ativa scroll interno se passar do limite estipulado
-      } else {
-        this.style.overflowY = 'hidden'; // Oculta barra para transições fluidas
-      }
-      chatContainer.scrollTop = chatContainer.scrollHeight; // Mantém foco no rodapé
+      this.style.height = '44px'; 
+      this.style.height = this.scrollHeight + 'px'; 
+      if (this.scrollHeight > 140) { this.style.overflowY = 'auto'; } else { this.style.overflowY = 'hidden'; }
+      chatContainer.scrollTop = chatContainer.scrollHeight; 
     });
 
-    window.onload = function() {
-      document.getElementById('rules-input').value = localStorage.getItem('teca_rules') || '';
-      document.getElementById('memory-input').value = localStorage.getItem('teca_memory') || '';
-      document.getElementById('rules-toggle').checked = localStorage.getItem('teca_rules_enabled') === 'true';
-      document.getElementById('memory-toggle').checked = localStorage.getItem('teca_memory_enabled') === 'true';
-
-      if (localStorage.getItem('teca_web_search') === 'true') {
-        pesquisaWebAtiva = true;
-        document.getElementById('web-toggle-btn').classList.add('active');
+    // 🔬 MOTORES DE EXTRAÇÃO TEXTUAL NATIVOS DO CLIENTE (ZERO SERVER LOAD)
+    function limitarEComprimirTextoDoc(texto) {
+      if (!texto) return "";
+      let limpo = texto.replace(/\s+/g, ' ').trim();
+      if (limpo.length > 15000) {
+        alert("⚠️ Documento muito extenso! Para preservar os créditos e a velocidade do Cactus, apenas os primeiros 15.000 caracteres serão analisados.");
+        limpo = limpo.substring(0, 15000) + "\n\n[CONTEÚDO TRUNCADO PELO SISTEMA DE SEGURANÇA PARA EVITAR ESTOURO DE CONTEXTO]";
       }
+      return limpo;
+    }
 
-      const chatsSalvos = localStorage.getItem('teca_lista_chats');
-      if (chatsSalvos) {
-        listaChats = JSON.parse(chatsSalvos);
-        idChatAtivo = localStorage.getItem('teca_id_chat_ativo');
+    async function extrairTextoPDF(arrayBuffer) {
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let textoCompleto = "";
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        textoCompleto += content.items.map(item => item.str).join(" ") + "\n";
       }
+      return textoCompleto;
+    }
 
-      if (window.innerWidth > 768) {
-        document.body.classList.add('sidebar-open');
-      } else {
-        document.body.classList.remove('sidebar-open');
-      }
+    function extrairTextoExcel(arrayBuffer) {
+      const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+      let textoCompleto = "";
+      workbook.SheetNames.forEach(sheetName => {
+        textoCompleto += `\n--- Aba: ${sheetName} ---\n`;
+        textoCompleto += XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]) + "\n";
+      });
+      return textoCompleto;
+    }
 
-      if (listaChats.length === 0) { 
-        criarNovoChat(); 
-      } else { 
-        renderrarInstanciaBarraLateral(); 
-        carregarChat(idChatAtivo || listaChats[0].id); 
-      }
-    };
+    async function extrairTextoWord(arrayBuffer) {
+      const result = await mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+      return result.value;
+    }
 
     function processarArquivoLocal(input) {
       const file = input.files[0];
       if (!file) return;
+
+      document.getElementById('attachment-name-text').innerText = "⚡ Processando arquivo...";
+      document.getElementById('preview-attachment-box').style.display = 'flex';
+
       const reader = new FileReader();
+
+      // PIPELINE 1: PROCESSAMENTO VISUAL (IMAGENS)
       if (file.type.startsWith('image/')) {
         reader.onload = function(e) {
           const img = new Image();
@@ -283,9 +291,56 @@
           img.src = e.target.result;
         };
         reader.readAsDataURL(file);
-      } else {
+      } 
+      // PIPELINE 2: PARSING DE PDF
+      else if (file.type === 'application/pdf') {
+        reader.onload = async function(e) {
+          try {
+            let texto = await extrairTextoPDF(e.target.result);
+            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
+            document.getElementById('attachment-img-preview').style.display = 'none';
+            mostrarBarraAnexo(`📄 ${file.name} (PDF Lido)`);
+          } catch (err) {
+            alert("Falha no leitor de PDF: " + err.message);
+            limparAnexo();
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } 
+      // PIPELINE 3: PARSING DE EXCEL/PLANILHAS
+      else if (file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || file.type === 'application/vnd.ms-excel' || file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         reader.onload = function(e) {
-          arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: e.target.result };
+          try {
+            let texto = extrairTextoExcel(e.target.result);
+            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
+            document.getElementById('attachment-img-preview').style.display = 'none';
+            mostrarBarraAnexo(`📊 ${file.name} (Planilha Lida)`);
+          } catch (err) {
+            alert("Falha no leitor de Planilhas: " + err.message);
+            limparAnexo();
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } 
+      // PIPELINE 4: PARSING DE WORD (.docx)
+      else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.docx')) {
+        reader.onload = async function(e) {
+          try {
+            let texto = await extrairTextoWord(e.target.result);
+            arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(texto) };
+            document.getElementById('attachment-img-preview').style.display = 'none';
+            mostrarBarraAnexo(`📝 ${file.name} (Documento Lido)`);
+          } catch (err) {
+            alert("Falha no leitor do Word: " + err.message);
+            limparAnexo();
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      } 
+      // PIPELINE 5: ARQUIVOS TEXTUAIS PADRÃO (.txt, .csv, .json)
+      else {
+        reader.onload = function(e) {
+          arquivoCarregado = { tipo: 'texto', nome: file.name, conteudo: limitarEComprimirTextoDoc(e.target.result) };
           document.getElementById('attachment-img-preview').style.display = 'none';
           mostrarBarraAnexo(file.name);
         };
@@ -388,11 +443,9 @@
       if (!texto && !arquivoCarregado) return;
 
       let promptFinalEnvio = texto;
-      if (!texto && arquivoCarregado) promptFinalEnvio = `Analise este arquivo: ${arquivoCarregado.nome}`;
+      if (!texto && arquivoCarregado) promptFinalEnvio = `Analise este arquivo anexado: ${arquivoCarregado.nome}`;
 
       userInput.value = '';
-      
-      // 🛠️ RESET OBRIGATÓRIO DO COMPONENTE ELÁSTICO PÓS-ENVIO
       userInput.style.height = '44px';
       userInput.style.overflowY = 'hidden';
 
@@ -405,6 +458,8 @@
       let visualTexto = promptFinalEnvio;
       if (arquivoCarregado && arquivoCarregado.tipo === 'imagem') {
         visualTexto = `<img src="${arquivoCarregado.conteudo}" style="max-width:100%; max-height:200px; border-radius:8px; display:block; margin-bottom:5px;">` + promptFinalEnvio;
+      } else if (arquivoCarregado && arquivoCarregado.tipo === 'texto') {
+        visualTexto = `📂 **Arquivo lido localmente:** \`${arquivoCarregado.nome}\`\n\n${promptFinalEnvio}`;
       }
 
       adicionarMensagemDiv(visualTexto, 'user');
@@ -423,7 +478,7 @@
       const pensamentosTextuais = [
         "🔍 Mapeando payloads e preparando barramento multimodal...",
         "🤖 Disparando ringue paralelo (DeepSeek Engine & Llama Visão)...",
-        "⚖️ Magistratura Ativa: Llama 3.3 70B arbitrando veredito final..."
+        "⚖️ Magistratura Ativa: Llama 3.3 70B arbitando veredito final..."
       ];
       
       loadingDiv.innerText = pensamentosTextuais[0];
