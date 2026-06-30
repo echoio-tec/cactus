@@ -116,17 +116,21 @@
     .preview-thumb { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; border: 1px solid #3f3f46; display: none; }
     .remove-attachment-btn { background: transparent; border: none; color: #ef4444; font-weight: bold; cursor: pointer; font-size: 1rem; padding: 0 4px; }
 
-    #input-container { padding: 4px 16px 4px 16px; width: 100%; display: flex; gap: 10px; align-items: center; }
-    .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: center; padding: 0 12px 0 4px; min-width: 0; }
+    /* CORREÇÃO INTELIGENTE: Alinhamento de base (flex-end) para ancorar ícones conforme o input cresce */
+    #input-container { padding: 4px 16px 4px 16px; width: 100%; display: flex; gap: 10px; align-items: flex-end; }
+    .input-wrapper { flex: 1; background-color: var(--chat-bg); border: 1px solid var(--border-color); border-radius: 24px; display: flex; align-items: flex-end; padding: 0 12px 3px 4px; min-width: 0; }
     .input-wrapper:focus-within { border-color: var(--accent-color); }
     
-    .icon-btn-input { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; color: #fff; }
+    /* Força os botões redondos internos a manterem uma margem simétrica constante na base */
+    .icon-btn-input { background: transparent; border: none; font-size: 1.1rem; cursor: pointer; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; opacity: 0.5; transition: all 0.2s; flex-shrink: 0; color: #fff; margin-bottom: 2px; }
     .icon-btn-input:hover { opacity: 1; background: rgba(255,255,255,0.05); }
     .web-search-toggle.active { opacity: 1; filter: grayscale(0); background: rgba(0, 102, 255, 0.15); border: 1px solid rgba(0, 102, 255, 0.3); color: #0066ff; }
 
-    textarea { flex: 1; background: transparent; border: none; padding: 12px 8px; color: var(--text-color); resize: none; height: 44px; outline: none; font-size: 0.95rem; }
+    /* CORREÇÃO DE ELASTICIDADE: Remoção de height estático e inserção de max-height com contenção */
+    textarea { flex: 1; background: transparent; border: none; padding: 12px 8px; color: var(--text-color); resize: none; height: 44px; max-height: 140px; outline: none; font-size: 0.95rem; overflow-y: hidden; }
 
-    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; }
+    /* Ancoragem estável do botão de envio no mesmo eixo inferior */
+    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; margin-bottom: 2px; }
     button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
     .disclaimer { font-size: 0.72rem; color: #71717a; text-align: center; padding-top: 4px; padding-bottom: 4px; background-color: var(--bg-color); flex-shrink: 0; width: 100%; }
@@ -213,6 +217,19 @@
     const chatListElement = document.getElementById('chat-list');
 
     let listaChats = [], idChatAtivo = null, pesquisaWebAtiva = false, arquivoCarregado = null, thoughtInterval = null, botaoVozAtivo = null;
+
+    // 🛠️ ESCUTA DINÂMICA DE EXPANSÃO DA CAIXA DE TEXTO (AUTO-RESIZE CONTROLADO)
+    userInput.addEventListener('input', function() {
+      this.style.height = '44px'; // Reseta temporariamente para obter o scrollHeight real
+      this.style.height = this.scrollHeight + 'px'; // Aplica a nova dimensão
+      
+      if (this.scrollHeight > 140) {
+        this.style.overflowY = 'auto'; // Ativa scroll interno se passar do limite estipulado
+      } else {
+        this.style.overflowY = 'hidden'; // Oculta barra para transições fluidas
+      }
+      chatContainer.scrollTop = chatContainer.scrollHeight; // Mantém foco no rodapé
+    });
 
     window.onload = function() {
       document.getElementById('rules-input').value = localStorage.getItem('teca_rules') || '';
@@ -374,6 +391,11 @@
       if (!texto && arquivoCarregado) promptFinalEnvio = `Analise este arquivo: ${arquivoCarregado.nome}`;
 
       userInput.value = '';
+      
+      // 🛠️ RESET OBRIGATÓRIO DO COMPONENTE ELÁSTICO PÓS-ENVIO
+      userInput.style.height = '44px';
+      userInput.style.overflowY = 'hidden';
+
       userInput.disabled = true;
       sendBtn.disabled = true;
 
@@ -473,7 +495,6 @@
       textoFinal.innerHTML = marked.parse(respostaFinal);
       msgConteudo.appendChild(textoFinal);
 
-      // 🛠️ MOTOR DE DETECÇÃO DE PAYLOAD GRÁFICO (EXTRAÇÃO DO LINK DE IMAGEM)
       const imgMatch = respostaFinal.match(/!\[.*?\]\((.*?)\)/);
       const imgUrl = imgMatch ? imgMatch[1] : null;
       let botaoDownloadHtml = '';
@@ -525,7 +546,6 @@
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    // 🛠️ FUNÇÃO DE STREAMING BINÁRIO PARA DOWNLOAD FORÇADO EM MOBILE E DESKTOP
     async function baixarImagemSegura(url) {
       try {
         const response = await fetch(url);
@@ -539,7 +559,6 @@
         document.body.removeChild(a);
         window.URL.revokeObjectURL(blobUrl);
       } catch (e) {
-        // Fallback robusto para WebViews de smartphones que bloqueiam requisições de Blob cross-origin
         window.open(url, '_blank');
       }
     }
