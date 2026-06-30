@@ -54,6 +54,33 @@ function sanitizarHistorico(historico) {
   return limpo;
 }
 
+// 📦 MOTOR DE COMPRESSÃO DE PROMPT (BÔNUS)
+function comprimirPrompt(texto) {
+  if (!texto) return "";
+  return texto
+    .replace(/\s+/g, ' ') // Elimina espaços duplicados e quebras de linha excessivas
+    .replace(/^(por favor|gentileza|por gentileza|obrigado|muito obrigado),?\s*/i, '') // Remove excessos de polidez
+    .trim();
+}
+
+// 🧠 FILTRO DO ROUTER INTELIGENTE (FAST-PATH VS SLOW-PATH)
+function verificarMensagemTrivial(texto) {
+  const t = texto.toLowerCase().trim();
+  if (!t) return true;
+
+  const termosTriviais = [
+    'oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 
+    'obrigado', 'obrigada', 'valeu', 'show', 'ok', 'blz', 'beleza', 'tchau', 'vlw', 
+    'entendi', 'perfeito', 'top', 'sim', 'nao', 'não', 'ajuda'
+  ];
+
+  // Se a mensagem contiver menos de 3 palavras ou bater exatamente com a lista de saudações
+  const totalPalavras = t.split(' ').length;
+  if (totalPalavras <= 2) return true;
+
+  return termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
+}
+
 async function buscarNaWeb(query) {
   try {
     if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente nas variáveis de ambiente do Render.";
@@ -76,6 +103,12 @@ app.post('/api/perguntar', async (req, res) => {
   if (!historico || historico.length === 0) return res.status(400).json({ error: 'Histórico ausente.' });
   
   const historicoSanitizado = sanitizarHistorico(historico);
+  
+  // Executa compressão direta no prompt de entrada do usuário
+  if (historicoSanitizado.length > 0 && historicoSanitizado[historicoSanitizado.length - 1].role === 'user') {
+    historicoSanitizado[historicoSanitizado.length - 1].content = comprimirPrompt(historicoSanitizado[historicoSanitizado.length - 1].content);
+  }
+  
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
 
   try {
@@ -96,37 +129,50 @@ app.post('/api/perguntar', async (req, res) => {
 
       if (!promptImagem) return res.status(400).json({ error: "Especifique o cenário descritivo da imagem." });
 
-      console.log(`[Cactus-Graphics] Tentando renderização primária via NVIDIA NIM: "${promptImagem}"`);
+      console.log(`[Cactus-Graphics] Renderizando arte: "${promptImagem}"`);
       try {
-        const responseImg = await nvidia.images.generate({
-          model: "stabilityai/stable-diffusion-xl",
-          prompt: promptImagem
-        });
-        
+        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
         return res.json({
           respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`,
           auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
         });
       } catch (errImg) {
-        // 🚨 CIRCUITO DE CONTINGÊNCIA AUTOMÁTICO E SILENCIOSO PARA O USUÁRIO
-        console.warn(`[Cactus-Graphics] Falha na NVIDIA NIM (${errImg.message}). Acionando barramento de reserva Pollinations de forma transparente...`);
-        
+        console.warn(`[Cactus-Graphics] Falha NVIDIA NIM. Acionando Pollinations transparentemente...`);
         const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
-        
         return res.json({
-          // CORREÇÃO: Removido qualquer texto explicativo sobre erro de cota ou servidor secundário. Resposta idêntica à de sucesso.
           respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`,
-          auditoria: { 
-            deepseek: `Erro NVIDIA: ${errImg.message}`, 
-            gemma: "Circuito de Reserva Ativado Silenciosamente", 
-            llama8b: "Engine Flux-Pollinations Ativa", 
-            webRaw: "Módulo Gráfico Blindado e Mascarado" 
-          }
+          auditoria: { deepseek: `Erro NVIDIA: ${errImg.message}`, gemma: "Circuito de Reserva Ativado", llama8b: "Engine Flux-Pollinations", webRaw: "Módulo Gráfico Mascarado" }
         });
       }
     }
 
-    // 📝 RESOLUÇÃO DE CONTEXTOS TEXTUAIS
+    // Definindo a persona base do Cactus
+    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, forte, prestativo e com rigor científico. Responda em português (PT-BR) de forma direta e sem enrolação.";
+    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
+    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
+
+    // ⚡ BIFURCAÇÃO DO ROUTER: LINHA RÁPIDA (FAST-PATH)
+    const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
+    if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
+      console.log(`[Cactus-Router] Fast-Path Ativado para: "${ultimaMensagem}"`);
+      
+      const chamadaFastPath = await nvidia.chat.completions.create({
+        model: "deepseek-ai/deepseek-v4-flash", // Motor ultra-veloz para respostas cotidianas
+        messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta, natural e amigável em no máximo duas frases." }, ...historicoSanitizado],
+        max_tokens: 120
+      }).catch(tratarErroPromessa("DeepSeek-FastPath"));
+
+      const respostaRapida = chamadaFastPath.error ? chamadaFastPath.message : (chamadaFastPath.choices?.[0]?.message?.content || "Entendido.");
+
+      return res.json({
+        respostaFinal: respostaRapida,
+        auditoria: { deepseek: respostaRapida, gemma: "Segmentação Ignorada", llama8b: "Segmentação Ignorada", webRaw: "Fast-Path Ativo (Latência Reduzida)" }
+      });
+    }
+
+    // 🔬 LINHA PESADA (SLOW-PATH): MODELOS EM PARALELO + JUIZ CIENTÍFICO 70B
+    console.log(`[Cactus-Router] Slow-Path Ativado para: "${ultimaMensagem}"`);
+    
     let dadosInternet = "Pesquisa Web: Inativa.";
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
@@ -134,39 +180,29 @@ app.post('/api/perguntar', async (req, res) => {
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
 
-    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, personalizado para responder de forma profunda, profissional e didática. Use sempre português (PT-BR) e honre sua identidade Cactus. Baseie-se estritamente nas evidências factuais injetadas para responder com precisão técnica.";
-
-    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
-    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
+    // Adiciona as fontes factuais ao prompt estruturado
     if (pesquisaWeb) sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
-    let chamadaFiltro1, llamadaFiltro2, chamadaFiltro3;
+    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       const promptVisaoPuro = [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: `Você é a capacidade visual do Cactus. Analise meticulosamente a imagem com base no contexto do sistema e responda em PORTUGUÊS à solicitação: "${ultimaMensagem}"` },
+        { role: "user", content: [
+            { type: "text", text: `Você é a capacidade visual do Cactus. Analise a imagem com base no contexto do sistema e responda em PORTUGUÊS: "${ultimaMensagem}"` },
             { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
-          ]
-        }
+        ]}
       ];
+      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento no canal de visão." }, ...historicoSanitizado];
 
-      const promptTextoCego = [
-        { role: "system", content: sistemaTexto + "\n\n[AVISO]: O usuário enviou uma imagem. Você é o modelo de suporte de texto puro e não tem acesso aos olhos de visão do Cactus. Aguarde a consolidação do relatório visual." },
-        ...historicoSanitizado
-      ];
-
-      [chamadaFiltro1, llamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
       ]);
     } else {
-      [chamadaFiltro1, llamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
@@ -174,28 +210,29 @@ app.post('/api/perguntar', async (req, res) => {
     }
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt2 = llamadaFiltro2.error ? llamadaFiltro2.message : (llamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
+    const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
     const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
+    // ⚖️ MAGISTRATURA DE ALTA VELOCIDADE (LLAMA 3.3 70B JET ENGINE)
     const promptJuiz = `
-Você é o Juiz do Cactus. Avalie as três opções de resposta e selecione ou consolide a melhor, mais completa e profunda resposta estruturada em PORTUGUÊS (PT-BR).
-Garanta o cumprimento de dados factuais se houver relatórios de RAG local ou de internet inseridos no contexto do sistema.
-Se houver uma imagem em análise, dê preferência absoluta à Opção 1 (Visão).
-Retorne APENAS o texto puro da resposta consolidada, sem metalinguagem ou introduções de juiz.
+Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
+Garanta fidelidade aos relatórios de RAG local ou de internet inseridos no contexto do sistema se houver.
+Se houver imagem em análise, dê preferência absoluta à Opção 1 (Visão).
+Retorne APENAS o texto puro da resposta definitiva, sem metalinguagem.
 
-Pergunta do Usuário: "${ultimaMensagem}"
-
+Pergunta: "${ultimaMensagem}"
 Opção 1: ${txt1}
 Opção 2: ${txt2}
 Opção 3: ${txt3}
     `;
 
-    const llamadaJuiz = await nvidia.chat.completions.create({
+    const chamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.3-70b-instruct",
-      messages: [{ role: "user", content: promptJuiz }]
+      messages: [{ role: "user", content: promptJuiz }],
+      max_tokens: 800 // Limite de geração do Juiz para otimizar tempo de transmissão
     }).catch(() => null);
 
-    const respostaFinalConsolidada = (llamadaJuiz && llamadaJuiz.choices?.[0]?.message?.content) ? llamadaJuiz.choices[0].message.content : txt1;
+    const respostaFinalConsolidada = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : txt1;
 
     let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
@@ -203,12 +240,7 @@ Opção 3: ${txt3}
 
     res.json({
       respostaFinal: respostaFinalConsolidada,
-      auditoria: { 
-        deepseek: txt1, 
-        gemma: txt2, 
-        llama8b: txt3, 
-        webRaw: logRAG 
-      }
+      auditoria: { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG }
     });
 
   } catch (error) {
@@ -217,4 +249,4 @@ Opção 3: ${txt3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Operando central silenciosa de contingência na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando com Router Inteligente ativo na porta ${PORT}`));
