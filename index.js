@@ -12,7 +12,7 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 30000 
+  timeout: 60000 // EXPANSÃO: Aumentado para 60 segundos para suportar leitura de arquivos sem timeout
 });
 
 function tratarErroPromessa(modelo) {
@@ -147,7 +147,6 @@ app.post('/api/perguntar', async (req, res) => {
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
     // ⚡ BIFURCAÇÃO DO ROUTER: LINHA RÁPIDA (FAST-PATH)
-    // Se houver arquivo anexo (seja texto ou imagem), o Fast-Path é ignorado automaticamente para forçar leitura complexa
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
     if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
       console.log(`[Cactus-Router] Fast-Path Ativado para: "${ultimaMensagem}"`);
@@ -176,17 +175,15 @@ app.post('/api/perguntar', async (req, res) => {
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
 
-    // Injeção de Contextos de RAG externos no Prompt do Sistema
     if (pesquisaWeb) sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
     
-    // 🛠️ NOVO ACOPLAMENTO DE ENGENHARIA DE PARSING DOC DO CLIENTE (PDF/EXCEL/WORD)
     if (arquivoAnexo && arquivoAnexo.tipo === 'texto') {
       sistemaTexto += `\n\n[CONTEÚDO DO ARQUIVO ANEXADO E EXTRAÍDO PELO CLIENTE (${arquivoAnexo.nome})]:\n${arquivoAnexo.conteudo}`;
     }
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
-    let llamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
+    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       const promptVisaoPuro = [
@@ -197,20 +194,22 @@ app.post('/api/perguntar', async (req, res) => {
       ];
       const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento no canal de visão." }, ...historicoSanitizado];
 
-      [llamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
       ]);
     } else {
-      [llamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      // CORREÇÃO: Unificação estrita de nomenclatura e substituição do 3.1-70B pelo 3.3-70B de alta velocidade
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
+        nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
       ]);
     }
 
-    const txt1 = llamadaFiltro1.error ? llamadaFiltro1.message : (llamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
+    // CORREÇÃO: Removido qualquer erro de grafia ("llamadaFiltro") para blindar o runtime contra ReferenceError
+    const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
     const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
     const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
