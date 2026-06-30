@@ -12,7 +12,7 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 30000
+  timeout: 30000 
 });
 
 function tratarErroPromessa(modelo) {
@@ -79,7 +79,7 @@ app.post('/api/perguntar', async (req, res) => {
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
 
   try {
-    // 🎨 PIPELINE GRÁFICO INTELIGENTE COM AGENTE DE CONTINGÊNCIA ATIVO
+    // 🎨 PIPELINE GRÁFICO INTELIGENTE COM AGENTE DE CONTINGÊNCIA SILENCIOSO
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
     const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
                             textoMinusculo.startsWith('/imagem') || 
@@ -98,7 +98,6 @@ app.post('/api/perguntar', async (req, res) => {
 
       console.log(`[Cactus-Graphics] Tentando renderização primária via NVIDIA NIM: "${promptImagem}"`);
       try {
-        // Tenta o cluster padrão ouro da NVIDIA
         const responseImg = await nvidia.images.generate({
           model: "stabilityai/stable-diffusion-xl",
           prompt: promptImagem
@@ -109,19 +108,19 @@ app.post('/api/perguntar', async (req, res) => {
           auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
         });
       } catch (errImg) {
-        // 🚨 CIRCUITO DE CONTINGÊNCIA AUTOMÁTICO (Caso a API KEY dê B.O, entra aqui imediatamente)
-        console.warn(`[Cactus-Graphics] Falha na NVIDIA NIM (${errImg.message}). Acionando barramento de reserva Pollinations...`);
+        // 🚨 CIRCUITO DE CONTINGÊNCIA AUTOMÁTICO E SILENCIOSO PARA O USUÁRIO
+        console.warn(`[Cactus-Graphics] Falha na NVIDIA NIM (${errImg.message}). Acionando barramento de reserva Pollinations de forma transparente...`);
         
-        // Geração limpa, livre de chaves, ilimitada e em alta definição (1024x1024)
         const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
         
         return res.json({
-          respostaFinal: `🎨 Here is your image! O Cactus contornou com sucesso uma instabilidade na cota do servidor secundário e renderizou **"${promptImagem}"** através do barramento de reserva:\n\n![Imagem Gerada](${urlReserva})`,
+          // CORREÇÃO: Removido qualquer texto explicativo sobre erro de cota ou servidor secundário. Resposta idêntica à de sucesso.
+          respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`,
           auditoria: { 
             deepseek: `Erro NVIDIA: ${errImg.message}`, 
-            gemma: "Circuito de Reserva Ativado", 
+            gemma: "Circuito de Reserva Ativado Silenciosamente", 
             llama8b: "Engine Flux-Pollinations Ativa", 
-            webRaw: "Módulo Gráfico Blindado Contra Quedas" 
+            webRaw: "Módulo Gráfico Blindado e Mascarado" 
           }
         });
       }
@@ -143,7 +142,7 @@ app.post('/api/perguntar', async (req, res) => {
     if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
-    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
+    let chamadaFiltro1, llamadaFiltro2, chamadaFiltro3;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
       const promptVisaoPuro = [
@@ -161,13 +160,13 @@ app.post('/api/perguntar', async (req, res) => {
         ...historicoSanitizado
       ];
 
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaFiltro1, llamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
       ]);
     } else {
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      [chamadaFiltro1, llamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
         nvidia.chat.completions.create({ model: "meta/llama-3.1-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
@@ -175,7 +174,7 @@ app.post('/api/perguntar', async (req, res) => {
     }
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt2 = llamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
+    const txt2 = llamadaFiltro2.error ? llamadaFiltro2.message : (llamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
     const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
     const promptJuiz = `
@@ -191,12 +190,12 @@ Opção 2: ${txt2}
 Opção 3: ${txt3}
     `;
 
-    const chamadaJuiz = await nvidia.chat.completions.create({
+    const llamadaJuiz = await nvidia.chat.completions.create({
       model: "meta/llama-3.3-70b-instruct",
       messages: [{ role: "user", content: promptJuiz }]
     }).catch(() => null);
 
-    const respostaFinalConsolidada = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : txt1;
+    const respostaFinalConsolidada = (llamadaJuiz && llamadaJuiz.choices?.[0]?.message?.content) ? llamadaJuiz.choices[0].message.content : txt1;
 
     let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
@@ -218,4 +217,4 @@ Opção 3: ${txt3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus] Central unificada e à prova de falhas na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus] Operando central silenciosa de contingência na porta ${PORT}`));
