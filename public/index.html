@@ -20,7 +20,6 @@
       --color-llama: #ff2a5f;
     }
 
-    /* Blindagem Absoluta de Fontes contra regressão do Times New Roman */
     *, *::before, *::after, html, body, textarea, input, button, p, span, div, li, h1, h2, h3, summary { 
       box-sizing: border-box; 
       margin: 0; 
@@ -92,7 +91,6 @@
     .ai-render-content ul, .ai-render-content ol { margin-left: 18px; margin-bottom: 10px; }
     .ai-render-content li { color: #e4e4e7; }
 
-    /* 🛠️ ESTILOS DA NOVO TOOLBAR DE ACESSIBILIDADE (1000211090.jpg) */
     .msg-action-bar { display: flex; gap: 14px; margin-top: 10px; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.04); align-items: center; }
     .action-btn { background: transparent; border: none; color: #71717a; cursor: pointer; font-size: 1.05rem; padding: 4px 6px; border-radius: 6px; transition: all 0.2s; display: inline-flex; align-items: center; justify-content: center; }
     .action-btn:hover { color: var(--accent-color); background: rgba(255, 255, 255, 0.05); }
@@ -475,11 +473,18 @@
       textoFinal.innerHTML = marked.parse(respostaFinal);
       msgConteudo.appendChild(textoFinal);
 
-      // 🛠️ INJEÇÃO DA BARRA DE ACESSIBILIDADE E FEEDBACK DE ALTA FIDELIDADE (1000211090.jpg)
+      // 🛠️ MOTOR DE DETECÇÃO DE PAYLOAD GRÁFICO (EXTRAÇÃO DO LINK DE IMAGEM)
+      const imgMatch = respostaFinal.match(/!\[.*?\]\((.*?)\)/);
+      const imgUrl = imgMatch ? imgMatch[1] : null;
+      let botaoDownloadHtml = '';
+      
+      if (imgUrl) {
+        botaoDownloadHtml = `<button class="action-btn" onclick="baixarImagemSegura('${imgUrl}')" title="Fazer Download da Imagem">📥</button>`;
+      }
+
       const actionBar = document.createElement('div');
       actionBar.className = 'msg-action-bar';
       
-      // Sanitização estrita de aspas para injeção via template literals sem quebras
       const stringTratada = respostaFinal.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$/g, '\\$');
 
       actionBar.innerHTML = `
@@ -487,6 +492,7 @@
         <button class="action-btn" onclick="alternarFeedback(this, 'dislike')" title="Não gostei">👎</button>
         <button class="action-btn" onclick="reprocessarFluxoMensagem()" title="Regenerar Resposta">🔄</button>
         <button class="action-btn" onclick="copiarCopiaSegura(this, \`${stringTratada}\`)" title="Copiar para área de transferência">📋</button>
+        ${botaoDownloadHtml}
         <button class="action-btn" onclick="acionarLeituraVoz(this, \`${stringTratada}\`)" title="Ouvir mensagem em voz alta (Acessibilidade)">🔊</button>
       `;
       msgConteudo.appendChild(actionBar);
@@ -519,7 +525,25 @@
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
 
-    // LÓGICA DE SELEÇÃO UNICA DE FEEDBACK
+    // 🛠️ FUNÇÃO DE STREAMING BINÁRIO PARA DOWNLOAD FORÇADO EM MOBILE E DESKTOP
+    async function baixarImagemSegura(url) {
+      try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `cactus_render_${Date.now()}.jpg`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+      } catch (e) {
+        // Fallback robusto para WebViews de smartphones que bloqueiam requisições de Blob cross-origin
+        window.open(url, '_blank');
+      }
+    }
+
     function alternarFeedback(btn, tipo) {
       const bar = btn.parentElement;
       const botoes = bar.querySelectorAll('.action-btn');
@@ -532,7 +556,6 @@
       }
     }
 
-    // COPIAR TEXTO VIA API MODERNA NAVIGATOR
     function copiarCopiaSegura(btn, texto) {
       navigator.clipboard.writeText(texto).then(() => {
         const iconOriginal = btn.innerHTML;
@@ -541,7 +564,6 @@
       }).catch(() => alert('Erro nas permissões de cópia do navegador.'));
     }
 
-    // MOTOR TEXT-TO-SPEECH (TTS) COM HIGIENIZAÇÃO DE MARKDOWN PARA DEFICIENTES VISUAIS
     function acionarLeituraVoz(btn, texto) {
       if (!window.speechSynthesis) {
         alert('Este dispositivo não possui suporte a síntese de voz.');
@@ -560,10 +582,7 @@
         }
       }
 
-      // Remove marcações puras do Markdown (*, #, _, `) para evitar que o sintetizador soe confuso
-      const textoLimpo = texto.replace(/[*#_`~\-]/g, '')
-                             .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1'); // Limpa sintaxe de links mantendo o texto interno
-
+      const textoLimpo = texto.replace(/[*#_`~\-]/g, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
       const utterance = new SpeechSynthesisUtterance(textoLimpo);
       utterance.lang = 'pt-BR';
       
@@ -585,7 +604,6 @@
       window.speechSynthesis.speak(utterance);
     }
 
-    // PIPELINE DE REGENERAÇÃO INTEGRAL DE HISTÓRICO
     function reprocessarFluxoMensagem() {
       const chatCorrente = listaChats.find(c => c.id === idChatAtivo);
       if (!chatCorrente || chatCorrente.messages.length === 0) return;
