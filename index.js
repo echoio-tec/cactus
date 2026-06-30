@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const { OpenAI } = require('openai');
 
-// Injeção de módulos nativos estáveis de parsing no backend
+// Módulos para parsing server-side de alta performance
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
@@ -62,9 +62,8 @@ function sanitizarHistorico(historico) {
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
   let resultado = texto.replace(/\s+/g, ' ').trim();
-  // Trava rígida molecular: Corta em 15k caracteres no servidor para proteger a API e a RAM
   if (resultado.length > 15000) {
-    resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO DO DOCUMENTO EXTRAÍDO FOI TRUNCADO EM 15K CARACTERES POR SEGURANÇA VISANDO EVITAR OVERFLOW DE CONTEXTO]";
+    resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES PARA PRESERVAÇÃO DE JANELA DE CONTEXTO]";
   }
   return resultado;
 }
@@ -87,7 +86,7 @@ function verificarMensagemTrivial(texto) {
 
 async function buscarNaWeb(query) {
   try {
-    if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente nas variáveis de ambiente do Render.";
+    if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente.";
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -95,9 +94,9 @@ async function buscarNaWeb(query) {
     });
     if (!response.ok) return "Sem resultados relevantes da busca externa.";
     const data = await response.json();
-    return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Nenhum resultado relevante encontrado.";
+    return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Nenhum resultado encontrado.";
   } catch (err) {
-    return `Falha na conexão com o barramento do Tavily: ${err.message}`;
+    return `Falha na conexão com Tavily: ${err.message}`;
   }
 }
 
@@ -107,10 +106,17 @@ app.post('/api/perguntar', async (req, res) => {
   if (!historico || historico.length === 0) return res.status(400).json({ error: 'Histórico ausente.' });
   
   const historicoSanitizado = sanitizarHistorico(historico);
+  
+  if (historicoSanitizado.length > 0 && historicoSanitizado[historicoSanitizado.length - 1].role === 'user') {
+    historicoSanitizado[historicoSanitizado.length - 1].content = historicoSanitizado[historicoSanitizado.length - 1].content
+      .replace(/\s+/g, ' ')
+      .replace(/^(por favor|gentileza|por gentileza|obrigado|muito obrigado),?\s*/i, '')
+      .trim();
+  }
+  
   const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
 
   try {
-    // 🎨 PIPELINE GRÁFICO INTELIGENTE COM AGENTE DE CONTINGÊNCIA SILENCIOSO
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
     const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
                             textoMinusculo.startsWith('/imagem') || 
@@ -127,6 +133,7 @@ app.post('/api/perguntar', async (req, res) => {
 
       if (!promptImagem) return res.status(400).json({ error: "Especifique o cenário descritivo da imagem." });
 
+      console.log(`[Cactus-Graphics] Renderizando arte: "${promptImagem}"`);
       try {
         const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
         return res.json({
@@ -134,6 +141,7 @@ app.post('/api/perguntar', async (req, res) => {
           auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
         });
       } catch (errImg) {
+        console.warn(`[Cactus-Graphics] Falha NVIDIA NIM. Acionando Pollinations...`);
         const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
         return res.json({
           respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`,
@@ -146,14 +154,11 @@ app.post('/api/perguntar', async (req, res) => {
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
-    // ⚡ INTERCEPTADOR SERVER-SIDE DE DOCUMENTOS MULTIFORMATO
+    // ⚡ INTERCEPTADOR DE ARQUIVOS SERVER-SIDE
     let logDocNome = "";
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       logDocNome = arquivoAnexo.nome;
-      console.log(`[Cactus-Parser] Iniciando extração server-side para o documento: ${arquivoAnexo.nome}`);
-      
       try {
-        // Separa os metadados do cabeçalho Base64 e converte em Buffer binário de memória pura
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
         const dadosBrutos = partesBase64[1] || partesBase64[0];
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
@@ -161,69 +166,56 @@ app.post('/api/perguntar', async (req, res) => {
 
         let textoExtraido = "";
 
-        // Sub-Pipeline A: Parsing de PDF no Servidor
         if (nomeMinusculo.endsWith('.pdf')) {
           const parsedPdf = await pdfParse(bufferArquivo);
           textoExtraido = parsedPdf.text;
-        } 
-        // Sub-Pipeline B: Parsing de Excel / Planilhas no Servidor
-        else if (nomeMinusculo.endsWith('.xlsx') || nomeMinusculo.endsWith('.xls')) {
+        } else if (nomeMinusculo.endsWith('.xlsx') || nomeMinusculo.endsWith('.xls')) {
           const workbook = XLSX.read(bufferArquivo, { type: 'buffer' });
           workbook.SheetNames.forEach(sheetName => {
-            textoExtraido += `\n--- Aba Planilha: ${sheetName} ---\n`;
+            textoExtraido += `\n--- Aba: ${sheetName} ---\n`;
             textoExtraido += XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]) + "\n";
           });
-        } 
-        // Sub-Pipeline C: Parsing de Word (.docx) no Servidor
-        else if (nomeMinusculo.endsWith('.docx')) {
+        } else if (nomeMinusculo.endsWith('.docx')) {
           const parsedWord = await mammoth.extractRawText({ buffer: bufferArquivo });
           textoExtraido = parsedWord.value;
-        } 
-        // Sub-Pipeline D: Fallback para arquivos de texto legíveis plano (.txt, .csv, .json)
-        else {
+        } else {
           textoExtraido = bufferArquivo.toString('utf8');
         }
 
-        const textoComprimidoDefinitivo = comprimirETrancarTexto(textoExtraido);
-        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO INTEGRADO E ANALISADO PELO SERVIDOR (${arquivoAnexo.nome})]:\n${textoComprimidoDefinitivo}`;
-        
-        console.log(`[Cactus-Parser] Extração concluída com sucesso. Tamanho alocado: ${textoComprimidoDefinitivo.length} caracteres.`);
+        const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
+        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO EXTRAÍDO PELO SERVIDOR (${arquivoAnexo.nome})]:\n${textoFinalDoc}`;
       } catch (errParser) {
-        console.error(`[Cactus-Parser] Erro fatal durante a extração do documento: ${errParser.message}`);
-        sistemaTexto += `\n\n[ERRO DE INFRAESTRUTURA]: O usuário anexou o arquivo ${arquivoAnexo.nome}, mas o módulo de leitura falhou devido a corrupção ou criptografia. Avise-o sobre isso.`;
+        console.error(`[Cactus-Parser] Falha: ${errParser.message}`);
+        sistemaTexto += `\n\n[ERRO DE LEITURA]: O arquivo ${arquivoAnexo.nome} não pôde ser lido pelo servidor.`;
       }
     }
 
-    // ⚡ BIFURCAÇÃO DO ROUTER: LINHA RÁPIDA (FAST-PATH)
+    // ⚡ ROUTER: LINHA RÁPIDA (FAST-PATH)
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
     if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
       console.log(`[Cactus-Router] Fast-Path Ativado para: "${ultimaMensagem}"`);
-      
-      const chamadaFastPath = await nvidia.chat.completions.create({
+      const llamadaFastPath = await nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
         messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta, natural e amigável em no máximo duas frases." }, ...historicoSanitizado],
         max_tokens: 120
       }).catch(tratarErroPromessa("DeepSeek-FastPath"));
 
-      const respostaRapida = chamadaFastPath.error ? chamadaFastPath.message : (chamadaFastPath.choices?.[0]?.message?.content || "Entendido.");
-
+      const respostaRapida = llamadaFastPath.error ? llamadaFastPath.message : (llamadaFastPath.choices?.[0]?.message?.content || "Entendido.");
       return res.json({
         respostaFinal: respostaRapida,
-        auditoria: { deepseek: respostaRapida, gemma: "Segmentação Ignorada", llama8b: "Segmentation Inactive", webRaw: "Fast-Path Ativo" }
+        auditoria: { deepseek: respostaRapida, gemma: "Segmentação Ignorada", llama8b: "Segmentação Ignorada", webRaw: "Fast-Path Ativo" }
       });
     }
 
-    // 🔬 LINHA PESADA (SLOW-PATH): MODELOS EM PARALELO + JUIZ CIENTÍFICO 70B
+    // 🔬 LINHA PESADA (SLOW-PATH)
     console.log(`[Cactus-Router] Slow-Path Ativado para: "${ultimaMensagem}"`);
-    
     let dadosInternet = "Pesquisa Web: Inativa.";
     if (pesquisaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
+      sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     }
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
-
-    if (pesquisaWeb) sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
 
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
@@ -236,7 +228,7 @@ app.post('/api/perguntar', async (req, res) => {
             { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
         ]}
       ];
-      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento no canal de visão." }, ...historicoSanitizado];
+      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento." }, ...historicoSanitizado];
 
       [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
         nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
@@ -257,9 +249,9 @@ app.post('/api/perguntar', async (req, res) => {
 
     const promptJuiz = `
 Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
-Garanta fidelidade aos relatórios de RAG local, arquivos anexados de texto extraídos pelo servidor ou dados da internet se houver.
-Se houver imagem em análise, dê preferência absoluta à Opção 1 (Visão).
-Retorne APENAS o texto puro da resposta definitiva, sem metalinguagem.
+Garanta fidelidade aos relatórios de RAG local, arquivos extraídos ou dados da internet inseridos se houver.
+Se houver imagem, dê preferência absoluta à Opção 1 (Visão).
+Retorne APENAS o texto puro da resposta definitiva.
 
 Pergunta: "${ultimaMensagem}"
 Opção 1: ${txt1}
@@ -291,4 +283,4 @@ Opção 3: ${txt3}
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Rodando com processador server-side na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando na porta ${PORT}`));
