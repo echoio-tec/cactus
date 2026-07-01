@@ -84,6 +84,7 @@
     .action-btn.active-like { color: #22c55e !important; }
     .action-btn.active-dislike { color: #ef4444 !important; }
 
+    /* Mudado o banner para refletir o status limpo e profissional sugerido */
     .system-status { align-self: center; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #76b900; background: rgba(118, 185, 0, 0.06); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(118, 185, 0, 0.15); letter-spacing: 0.05em; }
 
     .backstage { margin-top: 10px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
@@ -138,9 +139,9 @@
         <button class="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
         <img src="Logo Cactus.png" alt="Cactus" class="logo-header">
       </div>
-      <button class="settings-toggle-btn" onclick="toggleSettingsPanel()">⚙️ Configurações</button>
+      <button class="settings-toggle-btn" onclick="e.stopPropagation(); toggleSettingsPanel()">⚙️ Configurações</button>
       
-      <div id="settings-panel">
+      <div id="settings-panel" onclick="e.stopPropagation()">
         <div class="panel-section">
           <div class="section-header">
             <span class="section-title">Suas instruções para o Cactus (Regras)</span>
@@ -414,7 +415,7 @@
 
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'message ai pulse';
-      loadingDiv.innerText = "🔍 Executando ringue de inferência relacional...";
+      loadingDiv.innerText = "🔍 Executando inferência e gerando relatório...";
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
@@ -516,7 +517,7 @@
       }
     }
 
-    // CORREÇÃO: Varredura baseada em container para blindar contra o fechamento imediato do painel de controle
+    // CORREÇÃO: Escutador global ajustado com exclusão de nós para impedir fechamento fantasma em cliques válidos
     document.addEventListener('click', function(e) {
       const panel = document.getElementById('settings-panel');
       const btn = document.querySelector('.settings-toggle-btn');
@@ -535,7 +536,7 @@
       localStorage.setItem('teca_memory', document.getElementById('memory-input').value);
       localStorage.setItem('teca_rules_enabled', document.getElementById('rules-toggle').checked);
       localStorage.setItem('teca_memory_enabled', document.getElementById('memory-toggle').checked);
-      if(alertUser) alert('Configurações salvas!');
+      if(alertUser) { alert('Configurações salvas!'); toggleSettingsPanel(); }
     }
   </script>
 </body>
