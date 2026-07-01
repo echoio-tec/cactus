@@ -1,27 +1,24 @@
 const express = require('express');
 const cors = require('cors');
 const { OpenAI } = require('openai');
+const { createClient } = require('@supabase/supabase-js');
 
-// Módulos para parsing server-side de alta performance
+// Módulos de extração de texto server-side
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(express.static('public'));
 
-const nvidia = new OpenAI({
-  apiKey: process.env.NVIDIA_API_KEY,
-  baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 15000 // Timeout rigoroso de 15s para evitar filas e loops no Render
-});
+// Conexão estável com a nova instância isolada do Supabase via variáveis de ambiente
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+const nvidia = new OpenAI({ apiKey: process.env.NVIDIA_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', timeout: 15000 });
 
 function tratarErroPromessa(modelo) {
-  return (err) => ({ error: true, message: `Módulo ${modelo} offline ou indisponível: ${err.message}` });
+  return (err) => ({ error: true, message: `Módulo ${modelo} offline: ${err.message}` });
 }
 
 // 🌾 BANCO DE ANCORAGEM ZOOTÉCNICA E AGRONÉGOCIO (MOCK RAG)
@@ -41,27 +38,8 @@ function recuperarContextoZootecnico(pergunta) {
   return "";
 }
 
-function sanitizarHistorico(historico) {
-  const limpo = [];
-  for (const msg of historico) {
-    if (msg.role === 'system') continue;
-    if (limpo.length === 0) {
-      if (msg.role === 'user') limpo.push({ role: msg.role, content: msg.content });
-    } else {
-      const ultima = limpo[limpo.length - 1];
-      if (ultima.role === msg.role) {
-        ultima.content += `\n${msg.content}`; 
-      } else {
-        limpo.push({ role: msg.role, content: msg.content });
-      }
-    }
-  }
-  return limpo;
-}
-
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
-  // CORREÇÃO DEFINITIVA: Removido qualquer atribuição implícita de variável global ou erro de sintaxe
   let resultado = texto.replace(/\s+/g, ' ').trim();
   if (resultado.length > 15000) {
     resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
@@ -69,96 +47,53 @@ function comprimirETrancarTexto(texto) {
   return resultado;
 }
 
-function verificarMensagemTrivial(texto) {
-  const t = texto.toLowerCase().trim();
-  if (!t) return true;
+// 📁 ROTAS DE GERENCIAMENTO DE ESTADO RELACIONAL (SUPABASE SYNC)
 
-  const termosTriviais = [
-    'oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 
-    'obrigado', 'obrigada', 'valeu', 'show', 'ok', 'blz', 'beleza', 'tchau', 'vlw', 
-    'entendi', 'perfeito', 'top', 'sim', 'nao', 'não', 'ajuda'
-  ];
+// A. Listar todos os chats salvos no banco
+app.get('/api/chats', async (req, res) => {
+  const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
+});
 
-  const totalPalavras = t.split(' ').length;
-  if (totalPalavras <= 2) return true;
+// B. Criar uma nova sessão física de chat com UUID estável
+app.post('/api/chats', async (req, res) => {
+  const { title } = req.body;
+  const { data, error } = await supabase.from('chats').insert({ title: title || 'Novo Chat' }).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
+});
 
-  return termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
-}
+// C. Deletar chat e todas as suas mensagens em cascata
+app.delete('/api/chats/:id', async (req, res) => {
+  const { error } = await supabase.from('chats').delete().eq('id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json({ success: true });
+});
 
-async function buscarNaWeb(query) {
-  try {
-    if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente.";
-    const response = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, query: query, search_depth: "basic", max_results: 3 })
-    });
-    if (!response.ok) return "Sem resultados relevantes da busca externa.";
-    const data = await response.json();
-    return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Nenhum resultado encontrado.";
-  } catch (err) {
-    return `Falha na conexão com Tavily: ${err.message}`;
-  }
-}
+// D. Resgatar histórico real de mensagens para renderização no front-end
+app.get('/api/chats/:id/mensagens', async (req, res) => {
+  const { data, error } = await supabase.from('messages').select('role, content, auditoria').eq('chat_id', req.params.id).order('created_at', { ascending: true });
+  if (error) return res.status(500).json({ error: error.message });
+  return res.json(data);
+});
 
+// 🔬 PIPELINE PRINCIPAL DE INFERÊNCIA PARALELA
 app.post('/api/perguntar', async (req, res) => {
-  // BLINDAGEM DE ESCOPO GLOBAL: Variáveis inicializadas no topo da rota garantem imunidade contra ReferenceError
-  let respostaFinalConsolidada = "Erro de processamento: Nenhuma IA do ringue analítico retornou dados a tempo.";
-  let logRAG = "[Sem dados alocados]";
+  let respostaFinalConsolidada = "Erro: Nenhuma IA respondeu a tempo.";
+  let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
   let logDocNome = "";
 
-  const { historico, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
+  const { chatId, ultimaMensagem, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
 
-  if (!historico || historico.length === 0) return res.status(400).json({ error: 'Histórico ausente.' });
-  
-  const historicoSanitizado = sanitizarHistorico(historico);
-  
-  if (historicoSanitizado.length > 0 && historicoSanitizado[historicoSanitizado.length - 1].role === 'user') {
-    historicoSanitizado[historicoSanitizado.length - 1].content = historicoSanitizado[historicoSanitizado.length - 1].content
-      .replace(/\s+/g, ' ')
-      .replace(/^(por favor|gentileza|por gentileza|obrigado|muito obrigado),?\s*/i, '')
-      .trim();
-  }
-  
-  const ultimaMensagem = historicoSanitizado.length > 0 ? historicoSanitizado[historicoSanitizado.length - 1].content : '';
+  if (!chatId) return res.status(400).json({ error: 'Identificador do chat (chatId) obrigatório.' });
 
   try {
-    const textoMinusculo = ultimaMensagem.toLowerCase().trim();
-    const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
-                            textoMinusculo.startsWith('/imagem') || 
-                            textoMinusculo.startsWith('gerar uma imagem') || 
-                            textoMinusculo.startsWith('gerar imagem') ||
-                            textoMinusculo.startsWith('desenhe') ||
-                            textoMinusculo.startsWith('crie uma imagem');
-
-    if (ehPromptGrafico) {
-      const promptImagem = ultimaMensagem
-        .replace(/^\/(gerar|imagem)\s*/i, '')
-        .replace(/^(gerar uma imagem|gerar imagem|desenhe|crie uma imagem de|crie uma imagem)\s*/i, '')
-        .trim();
-
-      if (!promptImagem) return res.status(400).json({ error: "Especifique o cenário descritivo da imagem." });
-
-      try {
-        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
-        return res.json({
-          respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`,
-          auditoria: { deepseek: "Renderizado via SDXL (NVIDIA)", gemma: "N/A", llama8b: "N/A", webRaw: "Barramento Principal Ativo" }
-        });
-      } catch (errImg) {
-        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
-        return res.json({
-          respostaFinal: `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`,
-          auditoria: { deepseek: `Erro NVIDIA: ${errImg.message}`, gemma: "Circuito de Reserva Ativado", llama8b: "Engine Flux-Pollinations", webRaw: "Módulo Gráfico Mascarado" }
-        });
-      }
-    }
-
-    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, forte, prestativo e com rigor científico. Responda em português (PT-BR) de forma profunda, exata e analítica.";
-    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
-    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
+    let sistemaTexto = "Seu nome é Cactus. Responda em português de forma profunda, exata e científica.";
+    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA]: ${memoryContext}`;
+    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ]: ${customInstructions}`;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       flagDocumentoAtivo = true;
@@ -168,117 +103,68 @@ app.post('/api/perguntar', async (req, res) => {
         const dadosBrutos = partesBase64[1] || partesBase64[0]; 
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
-
         let textoExtraido = "";
 
         if (nomeMinusculo.endsWith('.pdf')) {
-          const parsedPdf = await pdfParse(bufferArquivo);
-          textoExtraido = parsedPdf.text;
-        } else if (nomeMinusculo.endsWith('.xlsx') || nomeMinusculo.endsWith('.xls')) {
-          const workbook = XLSX.read(bufferArquivo, { type: 'buffer' });
-          workbook.SheetNames.forEach(sheetName => {
-            textoExtraido += `\n--- Aba: ${sheetName} ---\n`;
-            textoExtraido += XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]) + "\n";
-          });
+          const parsedPdf = await pdfParse(bufferArquivo); textoExtraido = parsedPdf.text;
         } else if (nomeMinusculo.endsWith('.docx')) {
-          const parsedWord = await mammoth.extractRawText({ buffer: bufferArquivo });
-          textoExtraido = parsedWord.value;
-        } else {
-          textoExtraido = bufferArquivo.toString('utf8');
+          const parsedWord = await mammoth.extractRawText({ buffer: bufferArquivo }); textoExtraido = parsedWord.value;
+        } else if (nomeMinusculo.endsWith('.xlsx')) {
+          const workbook = XLSX.read(bufferArquivo, { type: 'buffer' });
+          workbook.SheetNames.forEach(s => { textoExtraido += XLSX.utils.sheet_to_csv(workbook.Sheets[s]); });
         }
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
-        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO EXTRAÍDO PELO SERVIDOR (${arquivoAnexo.nome})]:\n${textoFinalDoc}`;
+        
+        // Atualiza o título do chat no banco com o nome do documento enviado
+        await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
+        
+        // Persiste o documento isoladamente no banco relacional
+        await supabase.from('chat_documents').insert({
+          chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc
+        });
       } catch (errParser) {
-        sistemaTexto += `\n\n[ERRO DE LEITURA INTERNA]: Falha ao extrair dados do arquivo ${arquivoAnexo.nome}.`;
+        console.error("Falha no parser:", errParser.message);
       }
     }
 
-    const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
-    if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
-      const chamadaFastPath = await nvidia.chat.completions.create({
-        model: "deepseek-ai/deepseek-v4-flash",
-        messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta, natural e amigável em no máximo duas frases." }, ...historicoSanitizado],
-        max_tokens: 120
-      }).catch(tratarErroPromessa("DeepSeek-FastPath"));
-
-      const respostaRapida = chamadaFastPath.error ? chamadaFastPath.message : (chamadaFastPath.choices?.[0]?.message?.content || "Entendido.");
-      return res.json({
-        respostaFinal: respostaRapida,
-        auditoria: { deepseek: respostaRapida, gemma: "Segmentação Ignorada", llama8b: "Segmentação Ignorada", webRaw: "Fast-Path Ativo" }
+    // Resgate de Contexto Imune a Amnésia: O servidor reconecta o arquivo automaticamente em todas as próximas mensagens
+    const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
+    if (docs && docs.length > 0) {
+      docs.forEach(d => {
+        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTIDO NO NOVO SUPABASE (${d.file_name})]:\n${d.extracted_text}`;
       });
     }
 
-    let dadosInternet = "Pesquisa Web: Inativa.";
-    let permitirBuscaWeb = pesquisaWeb && !flagDocumentoAtivo;
+    const { data: historicoBanco } = await supabase.from('messages').select('role, content').eq('chat_id', chatId).order('created_at', { ascending: true });
+    const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
 
-    if (permitirBuscaWeb) {
-      dadosInternet = await buscarNaWeb(ultimaMensagem);
-      sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
-    } else if (pesquisaWeb && flagDocumentoAtivo) {
-      dadosInternet = "Ignorada para priorizar o processamento isolado do documento anexo.";
-    }
-    
-    const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
-    if (dadosCientificosLocais) sistemaTexto += `\n\n[DADOS CIENTÍFICOS LOCAL ANCORADO]:\n${dadosCientificosLocais}`;
+    const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
+    ]);
 
-    const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
-    let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
+    txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
+    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
+    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
-    if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
-      const promptVisaoPuro = [
-        { role: "user", content: [
-            { type: "text", text: `Você é a capacidade visual do Cactus. Analise a imagem com base no contexto do sistema e responda em PORTUGUÊS: "${ultimaMensagem}"` },
-            { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
-        ]}
-      ];
-      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento." }, ...historicoSanitizado];
+    const promptJuiz = `Retorne APENAS a melhor resposta.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+    const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }).catch(() => null);
 
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
-        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
-      ]);
-    } else {
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
-      ]);
-    }
-
-    txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
-    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
-
-    const promptJuiz = `
-Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
-Garanta fidelidade aos relatórios de RAG local, arquivos extraídos ou dados da internet inseridos se houver.
-Retorne APENAS o texto puro da resposta definitiva, sem metalinguagem.
-
-Pergunta: "${ultimaMensagem}"
-Opção 1: ${txt1}
-Opção 2: ${txt2}
-Opção 3: ${txt3}
-    `;
-
-    const chamadaJuiz = await nvidia.chat.completions.create({
-      model: "meta/llama-3.3-70b-instruct",
-      messages: [{ role: "user", content: promptJuiz }],
-      max_tokens: 1000 
-    }).catch(() => null);
-
-    if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
+    if (chamadaJuiz && llamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
     } else {
-      if (!chamadaFiltro2.error) respostaFinalConsolidada = txt2;
-      else if (!chamadaFiltro1.error) respostaFinalConsolidada = txt1; 
-      else respostaFinalConsolidada = txt3;
+      respostaFinalConsolidada = !chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3);
     }
 
-    if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
-    if (logDocNome) logRAG += `[Doc Server Parse: ${logDocNome}] `;
-    logRAG += `[Web Search Status: ${dadosInternet.substring(0, 60)}]`;
+    // Insere de forma permanente o novo turno no banco isolado
+    await supabase.from('messages').insert([
+      { chat_id: chatId, role: 'user', content: ultimaMensagem },
+      { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada }
+    ]);
+
+    logRAG = `[Supabase Isolado Ativo] Docs na sessão: ${docs ? docs.length : 0}`;
 
     return res.json({
       respostaFinal: respostaFinalConsolidada,
@@ -286,10 +172,9 @@ Opção 3: ${txt3}
     });
 
   } catch (error) {
-    // Tratamento de contingência contra erros fatais estruturais na rota
     return res.status(500).json({ error: error.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Operando na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando com projeto isolado na porta ${PORT}`));
