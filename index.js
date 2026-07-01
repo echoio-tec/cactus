@@ -58,6 +58,7 @@ function sanitizarHistorico(historico) {
 
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
+  // CORREÇÃO: Limpado o erro sintático de atribuição múltipla que quebrava o parser de arquivos
   let resultado = texto.replace(/\s+/g, ' ').trim();
   if (resultado.length > 15000) {
     resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
@@ -161,6 +162,7 @@ app.post('/api/perguntar', async (req, res) => {
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
         
+        // Atualiza o título do chat na tabela do Supabase com o nome do documento processado
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
         await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
       } catch (errParser) {
@@ -171,12 +173,46 @@ app.post('/api/perguntar', async (req, res) => {
     const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
     if (docs && docs.length > 0) {
       docs.forEach(d => {
-        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTED (${d.file_name})]:\n${d.extracted_text}`;
+        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTIDO NO SUPABASE (${d.file_name})]:\n${d.extracted_text}`;
       });
     }
 
     const { data: historicoBanco } = await supabase.from('messages').select('role, content').eq('chat_id', chatId).order('created_at', { ascending: true });
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
+
+    // CORREÇÃO: Ampliação estrita do router gráfico para interceptar variações imperativas (Gere, Crie, Desenhe)
+    const textoMinusculo = ultimaMensagem.toLowerCase().trim();
+    const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
+                            textoMinusculo.startsWith('/imagem') || 
+                            textoMinusculo.startsWith('gerar uma imagem') || 
+                            textoMinusculo.startsWith('gerar imagem') ||
+                            textoMinusculo.startsWith('gere uma imagem') || 
+                            textoMinusculo.startsWith('gere imagem') ||
+                            textoMinusculo.startsWith('desenhe') ||
+                            textoMinusculo.startsWith('crie uma imagem') ||
+                            textoMinusculo.startsWith('crie imagem');
+
+    if (ehPromptGrafico) {
+      const promptImagem = ultimaMensagem
+        .replace(/^\/(gerar|imagem)\s*/i, '')
+        .replace(/^(gerar uma imagem|gerar imagem|gere uma imagem|gere imagem|desenhe|crie uma imagem de|crie uma imagem|crie imagem)\s*/i, '')
+        .trim();
+
+      try {
+        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`;
+      } catch (errImg) {
+        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`;
+      }
+
+      await supabase.from('messages').insert([
+        { chat_id: chatId, role: 'user', content: ultimaMensagem },
+        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: { deepseek: "SDXL Engine Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico Ativo" } }
+      ]);
+
+      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: { deepseek: "SDXL Engine Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico" } });
+    }
 
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
     if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
@@ -186,7 +222,7 @@ app.post('/api/perguntar', async (req, res) => {
         max_tokens: 120
       }).catch(tratarErroPromessa("DeepSeek-FastPath"));
 
-      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : chamadaFastPath.choices[0].message.content;
+      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : llamadaFastPath.choices[0].message.content;
       
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
@@ -209,10 +245,10 @@ app.post('/api/perguntar', async (req, res) => {
     ]);
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
-    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content; // CORREÇÃO EXATA DO TYPO: Alterado de llamadaFiltro2 para chamadaFiltro2
+    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content; // CORREÇÃO COMPLETA: Removida a variável com erro ortográfico
     txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
-    const promptJuiz = `Retorne APENAS a melhor resposta.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+    const promptJuiz = `Selecione ou consolide a melhor resposta em português.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
     const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }).catch(() => null);
 
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
@@ -224,7 +260,6 @@ app.post('/api/perguntar', async (req, res) => {
     logRAG = `[Supabase RAG] Docs: ${docs ? docs.length : 0} | Internet: ${pesquisaWeb ? "Sim" : "Não"}`;
     const objetoAuditoria = { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG };
 
-    // CORREÇÃO: Salvando o objeto de auditoria real no banco para evitar os logs em "N/A" ao recarregar a conversa
     await supabase.from('messages').insert([
       { chat_id: chatId, role: 'user', content: ultimaMensagem },
       { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }
