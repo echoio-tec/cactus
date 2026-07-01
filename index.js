@@ -13,15 +13,19 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// Conexão estável com o Supabase utilizando chaves de ambiente
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const nvidia = new OpenAI({ apiKey: process.env.NVIDIA_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', timeout: 15000 });
 
 function tratarErroPromessa(modelo) {
-  return (err) => ({ error: true, message: `Módulo ${modelo} offline: ${err.message}` });
+  return (err) => ({ error: true, message: `Módulo ${modelo} indisponível: ${err.message}` });
 }
 
-// 🌾 BANCO DE ANCORAGEM ZOOTÉCNICA E AGRONÉGOCIO (MOCK RAG)
+// Função auxiliar para forçar a liberação rápida de promessas travadas
+const corridaTimeout = (promessa, ms) => Promise.race([
+  promessa,
+  new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout de Limite de Latência')), ms))
+]);
+
 const BASE_CONHECIMENTO_AGRO = {
   nutricao_aves: "Tabela Técnica (Embrapa/NRC): Frangos de corte na fase inicial (1 a 21 dias) exigem: Energia Metabolizável: 2.950 a 3.000 kcal/kg. Proteína Bruta: 21% a 22%. Lisina Digestível: 1,22%. Metionina Digestível: 0,49%. Cálcio: 0,92%. Fósforo Disponível: 0,43%.",
   nutricao_bovinos: "Padrão de Confinamento Bovino: Relação volumoso:concentrado para terminação geralmente varia de 20:80 a 10:90. Exigência média de MS (Matéria Seca): 2,3% a 2,5% do Peso Vivo (PV). Ganho de peso esperado em dietas de alto grão: 1,4 kg a 1,8 kg/dia.",
@@ -46,11 +50,8 @@ function sanitizarHistorico(historico) {
       if (msg.role === 'user') limpo.push({ role: msg.role, content: msg.content });
     } else {
       const ultima = limpo[limpo.length - 1];
-      if (ultima.role === msg.role) {
-        ultima.content += `\n${msg.content}`; 
-      } else {
-        limpo.push({ role: msg.role, content: msg.content });
-      }
+      if (ultima.role === msg.role) ultima.content += `\n${msg.content}`; 
+      else limpo.push({ role: msg.role, content: msg.content });
     }
   }
   return limpo;
@@ -58,10 +59,9 @@ function sanitizarHistorico(historico) {
 
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
-  // CORREÇÃO: Limpado o erro sintático de atribuição múltipla que quebrava o parser de arquivos
   let resultado = texto.replace(/\s+/g, ' ').trim();
   if (resultado.length > 15000) {
-    resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
+    resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR]";
   }
   return resultado;
 }
@@ -69,17 +69,8 @@ function comprimirETrancarTexto(texto) {
 function verificarMensagemTrivial(texto) {
   const t = texto.toLowerCase().trim();
   if (!t) return true;
-
-  const termosTriviais = [
-    'oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 
-    'obrigado', 'obrigada', 'valeu', 'show', 'ok', 'blz', 'beleza', 'tchau', 'vlw', 
-    'entendi', 'perfeito', 'top', 'sim', 'nao', 'não', 'ajuda'
-  ];
-
-  const totalPalavras = t.split(' ').length;
-  if (totalPalavras <= 2) return true;
-
-  return termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
+  const termosTriviais = ['oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 'obrigado', 'obrigada', 'valeu', 'ok', 'blz', 'tchau', 'sim', 'nao', 'não'];
+  return t.split(' ').length <= 2 || termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
 }
 
 async function buscarNaWeb(query) {
@@ -90,15 +81,13 @@ async function buscarNaWeb(query) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, query: query, search_depth: "basic", max_results: 3 })
     });
-    if (!response.ok) return "Sem resultados relevantes da busca externa.";
     const data = await response.json();
     return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Nenhum resultado encontrado.";
   } catch (err) {
-    return `Falha na conexão com Tavily: ${err.message}`;
+    return `Falha na conexão externa: ${err.message}`;
   }
 }
 
-// ROTAS DE GERENCIAMENTO DE SESSÕES NO SUPABASE
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -124,17 +113,15 @@ app.get('/api/chats/:id/mensagens', async (req, res) => {
   return res.json(data);
 });
 
-// ROUTER PRINCIPAL DE PROCESSAMENTO
 app.post('/api/perguntar', async (req, res) => {
-  let respostaFinalConsolidada = "Erro: Sem resposta dos modelos.";
+  let respostaFinalConsolidada = "Erro: Sem resposta.";
   let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
   let logDocNome = "";
 
   const { chatId, ultimaMensagem, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
-
-  if (!chatId) return res.status(400).json({ error: 'chatId ausente.' });
+  if (!chatId) return res.status(400).json({ error: 'chatId obrigatório.' });
 
   try {
     let sistemaTexto = "Seu nome é Cactus. Responda em português de forma profunda e científica.";
@@ -145,9 +132,10 @@ app.post('/api/perguntar', async (req, res) => {
       flagDocumentoAtivo = true;
       logDocNome = arquivoAnexo.nome;
       try {
+        await supabase.from('chat_documents').delete().eq('chat_id', chatId);
+        
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const dadosBrutos = partesBase64[1] || partesBase64[0]; 
-        const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
+        const bufferArquivo = Buffer.from(partesBase64[1] || partesBase64[0], 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
         let textoExtraido = "";
 
@@ -161,35 +149,28 @@ app.post('/api/perguntar', async (req, res) => {
         }
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
-        
-        // Atualiza o título do chat na tabela do Supabase com o nome do documento processado
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
         await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
       } catch (errParser) {
-        console.error(errParser.message);
+        console.error("Erro de Parsing: ", errParser.message);
       }
     }
 
     const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
     if (docs && docs.length > 0) {
       docs.forEach(d => {
-        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTIDO NO SUPABASE (${d.file_name})]:\n${d.extracted_text}`;
+        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO ANEXADO]:\n${d.extracted_text}`;
       });
     }
 
     const { data: historicoBanco } = await supabase.from('messages').select('role, content').eq('chat_id', chatId).order('created_at', { ascending: true });
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
 
-    // CORREÇÃO: Ampliação estrita do router gráfico para interceptar variações imperativas (Gere, Crie, Desenhe)
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
-    const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || 
-                            textoMinusculo.startsWith('/imagem') || 
-                            textoMinusculo.startsWith('gerar uma imagem') || 
-                            textoMinusculo.startsWith('gerar imagem') ||
-                            textoMinusculo.startsWith('gere uma imagem') || 
-                            textoMinusculo.startsWith('gere imagem') ||
-                            textoMinusculo.startsWith('desenhe') ||
-                            textoMinusculo.startsWith('crie uma imagem') ||
+    const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || textoMinusculo.startsWith('/imagem') || 
+                            textoMinusculo.startsWith('gerar uma imagem') || textoMinusculo.startsWith('gerar imagem') ||
+                            textoMinusculo.startsWith('gere uma imagem') || textoMinusculo.startsWith('gere imagem') ||
+                            textoMinusculo.startsWith('desenhe') || textoMinusculo.startsWith('crie uma imagem') || 
                             textoMinusculo.startsWith('crie imagem');
 
     if (ehPromptGrafico) {
@@ -206,12 +187,18 @@ app.post('/api/perguntar', async (req, res) => {
         respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`;
       }
 
+      const auditGrafica = { deepseek: "SDXL Ativo", gemma: "N/A", llama8b: "N/A", webRaw: "Módulo de Imagem" };
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
-        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: { deepseek: "SDXL Engine Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico Ativo" } }
+        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditGrafica }
       ]);
 
-      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: { deepseek: "SDXL Engine Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico" } });
+      const { data: chatAtual } = await supabase.from('chats').select('title').eq('id', chatId).single();
+      if (chatAtual && chatAtual.title === 'Novo Chat') {
+        await supabase.from('chats').update({ title: promptImagem.substring(0, 25) }).eq('id', chatId);
+      }
+
+      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: auditGrafica });
     }
 
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
@@ -220,36 +207,36 @@ app.post('/api/perguntar', async (req, res) => {
         model: "deepseek-ai/deepseek-v4-flash",
         messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta em no máximo duas frases." }, ...promptTextualPuro.slice(1)],
         max_tokens: 120
-      }).catch(tratarErroPromessa("DeepSeek-FastPath"));
+      }).catch(tratarErroPromessa("FastPath"));
 
-      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : llamadaFastPath.choices[0].message.content;
+      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : chamadaFastPath.choices[0].message.content;
       
+      const auditTrivial = { deepseek: respostaFinalConsolidada, gemma: "N/A", llama8b: "N/A", webRaw: "Fast-Path Ativo" };
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
-        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: { deepseek: respostaFinalConsolidada, gemma: "Ignorado", llama8b: "Ignorado", webRaw: "Fast-Path Ativo" } }
+        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditTrivial }
       ]);
-
-      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: { deepseek: respostaFinalConsolidada, gemma: "N/A", llama8b: "N/A", webRaw: "Fast-Path Ativo" } });
+      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: auditTrivial });
     }
 
-    let dadosInternet = "Pesquisa Web: Inativa.";
     if (pesquisaWeb && !flagDocumentoAtivo) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
-      sistemaTexto += `\n\n[DADOS DA INTERNET]:\n${dadosInternet}`;
+      sistemaTexto += `\n\n[DADOS INTERNET]:\n${dadosInternet}`;
     }
 
+    // ⚡ OTIMIZAÇÃO DE VELOCIDADE: Limite de 3.5 segundos por modelo para evitar esperas infinitas em timeouts externos
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
+      corridaTimeout(nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }), 3500).catch(tratarErroPromessa("DeepSeek")),
+      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }), 3500).catch(tratarErroPromessa("Llama-8B")),
+      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }), 4500).catch(tratarErroPromessa("Llama-70B"))
     ]);
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
-    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content; // CORREÇÃO COMPLETA: Removida a variável com erro ortográfico
-    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
+    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
+    txt3 = llamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
-    const promptJuiz = `Selecione ou consolide a melhor resposta em português.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
-    const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }).catch(() => null);
+    const promptJuiz = `Determine a melhor resposta estruturada em português.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+    const chamadaJuiz = await corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }), 3500).catch(() => null);
 
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
@@ -257,13 +244,20 @@ app.post('/api/perguntar', async (req, res) => {
       respostaFinalConsolidada = !chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3);
     }
 
-    logRAG = `[Supabase RAG] Docs: ${docs ? docs.length : 0} | Internet: ${pesquisaWeb ? "Sim" : "Não"}`;
+    logRAG = `[Supabase] Docs Ativos: ${docs ? docs.length : 0}`;
     const objetoAuditoria = { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG };
 
     await supabase.from('messages').insert([
       { chat_id: chatId, role: 'user', content: ultimaMensagem },
       { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }
     ]);
+
+    // Mecanismo automático de renomeação do chat com base no assunto do primeiro turno
+    const { data: chatAtual } = await supabase.from('chats').select('title').eq('id', chatId).single();
+    if (chatAtual && chatAtual.title === 'Novo Chat') {
+      const novoTitulo = flagDocumentoAtivo ? logDocNome : (ultimaMensagem.length > 25 ? ultimaMensagem.substring(0, 25) + '...' : ultimaMensagem);
+      await supabase.from('chats').update({ title: novoTitulo }).eq('id', chatId);
+    }
 
     return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: objetoAuditoria });
 
@@ -273,4 +267,4 @@ app.post('/api/perguntar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Ativo na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando na porta ${PORT}`));

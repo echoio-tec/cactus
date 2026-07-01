@@ -84,7 +84,7 @@
     .action-btn.active-like { color: #22c55e !important; }
     .action-btn.active-dislike { color: #ef4444 !important; }
 
-    .system-status { align-self: center; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; color: #a1a1aa; background: #18181b; padding: 6px 14px; border-radius: 20px; border: 1px solid var(--border-color); }
+    .system-status { align-self: center; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #76b900; background: rgba(118, 185, 0, 0.06); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(118, 185, 0, 0.15); letter-spacing: 0.05em; }
 
     .backstage { margin-top: 10px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
     .backstage summary { cursor: pointer; color: var(--accent-color); font-weight: 600; font-size: 0.8rem; padding: 10px 14px; background: #111113; }
@@ -111,7 +111,7 @@
 
     textarea { flex: 1; background: transparent; border: none; padding: 12px 8px; color: var(--text-color); resize: none; height: 44px; max-height: 140px; outline: none; font-size: 0.95rem; overflow-y: hidden; }
 
-    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; margin-bottom: 2px; }
+    button#send-btn { background-color: var(--accent-color); color: #000; border: none; border-radius: 50%; width: 44px; height: 44px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(118, 185, 0, 0.2); flex-shrink: 0; margin-bottom: 2px; transition: background-color 0.2s; }
     button#send-btn:disabled { background-color: #27272a; color: #71717a; cursor: not-allowed; }
 
     .disclaimer { font-size: 0.72rem; color: #71717a; text-align: center; padding-top: 4px; padding-bottom: 4px; background-color: var(--bg-color); width: 100%; }
@@ -196,7 +196,7 @@
     const chatListElement = document.getElementById('chat-list');
 
     let listaChats = [], idChatAtivo = null, pesquisaWebAtiva = false, arquivoCarregado = null, thoughtInterval = null;
-    let activeAbortController = null; // CONTROLADOR ASSÍNCRONO CONTRA CONGELAMENTO DE REQUISITOS
+    let activeAbortController = null;
 
     window.onload = async function() {
       try {
@@ -263,7 +263,7 @@
           document.getElementById('attachment-img-preview').src = arquivoCarregado.conteudo;
           document.getElementById('attachment-img-preview').style.display = 'block';
           mostrarBarraAnexo(file.name);
-          userInput.focus(); // CORREÇÃO: Devolve o foco imediato para digitação de texto no celular
+          userInput.focus(); 
         };
         reader.readAsDataURL(file);
       } else {
@@ -271,7 +271,7 @@
           arquivoCarregado = { tipo: 'documento', nome: file.name, conteudo: e.target.result };
           document.getElementById('attachment-img-preview').style.display = 'none';
           mostrarBarraAnexo(`📄 ${file.name}`);
-          userInput.focus(); // CORREÇÃO: Devolve o foco imediato para digitação de texto no celular
+          userInput.focus(); 
         };
         reader.readAsDataURL(file);
       }
@@ -322,7 +322,7 @@
           item.classList.toggle('active', item.getAttribute('data-id') === id);
         });
 
-        chatContainer.innerHTML = '<div class="system-status">Barramento de Sincronização Relacional Ativo</div>';
+        chatContainer.innerHTML = '<div class="system-status">● Cactus Core</div>';
         
         const res = await fetch(`/api/chats/${id}/mensagens`);
         const mensagens = await res.json();
@@ -373,11 +373,8 @@
     }
 
     function gerenciarCliqueBotaoEnvio() {
-      if (sendBtn.innerText === '🛑') {
-        cancelarRequisicaoAtiva();
-      } else {
-        enviarPergunta();
-      }
+      if (sendBtn.innerText === '🛑') cancelarRequisicaoAtiva();
+      else enviarPergunta();
     }
 
     function cancelarRequisicaoAtiva() {
@@ -387,9 +384,6 @@
         document.querySelector('.pulse')?.remove();
         adicionarMensagemDiv("⚠️ Geração interrompida pelo usuário.", "ai");
         
-        // Restaura a usabilidade dos botões gráficos
-        userInput.disabled = false;
-        sendBtn.disabled = false;
         sendBtn.innerText = '➜';
         sendBtn.style.backgroundColor = 'var(--accent-color)';
         userInput.focus();
@@ -406,8 +400,6 @@
       userInput.value = '';
       userInput.style.height = '44px';
 
-      // Transforma o botão de envio em um botão de parada vermelho
-      userInput.disabled = false; // Deixa o campo aberto caso queira usar comandos ou parar
       sendBtn.innerText = '🛑';
       sendBtn.style.backgroundColor = '#ef4444';
 
@@ -422,14 +414,13 @@
 
       const loadingDiv = document.createElement('div');
       loadingDiv.className = 'message ai pulse';
-      loadingDiv.innerText = "🔍 Gravando dados e acionando pipeline de produção...";
+      loadingDiv.innerText = "🔍 Executando ringue de inferência relacional...";
       chatContainer.appendChild(loadingDiv);
       chatContainer.scrollTop = chatContainer.scrollHeight;
 
       const anexoParaEnvio = arquivoCarregado;
       limparAnexo();
 
-      // Inicializa o barramento de abortamento do canal HTTP
       activeAbortController = new AbortController();
       const signal = activeAbortController.signal;
 
@@ -454,20 +445,15 @@
         if (data.error) {
           adicionarMensagemDiv('Ops! Houve uma interrupção: ' + data.error, 'ai');
         } else {
-          // CORREÇÃO VISUAL: Imprime o bloco na tela sem apagar o histórico de mensagens já renderizado
           adicionarMensagemDivComBastidores(data.respostaFinal, data.auditoria);
           await recarregarApenasTitulosDaBarraLateral();
         }
       } catch (error) {
-        if (error.name === 'AbortError') {
-          console.log("Fluxo cancelado via interface.");
-          return;
-        }
+        if (error.name === 'AbortError') return;
         loadingDiv.remove(); 
         adicionarMensagemDiv('Falha crítica de comunicação com o cluster Render.', 'ai');
       }
 
-      // Restaura o estado padrão do botão de gatilho
       sendBtn.innerText = '➜';
       sendBtn.style.backgroundColor = 'var(--accent-color)';
       userInput.focus();
@@ -528,6 +514,20 @@
       } else {
         btn.classList.toggle('active-dislike'); botoes[0].classList.remove('active-like');
       }
+    }
+
+    // CORREÇÃO: Varredura baseada em container para blindar contra o fechamento imediato do painel de controle
+    document.addEventListener('click', function(e) {
+      const panel = document.getElementById('settings-panel');
+      const btn = document.querySelector('.settings-toggle-btn');
+      if (panel.style.display === 'block' && !panel.contains(e.target) && !btn.contains(e.target)) {
+        panel.style.display = 'none';
+      }
+    });
+
+    function toggleSettingsPanel() {
+      const panel = document.getElementById('settings-panel');
+      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
     }
 
     function saveSettings(alertUser = false) {
