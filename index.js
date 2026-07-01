@@ -17,7 +17,7 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 60000 
+  timeout: 15000 // CALIBRAÇÃO: Reduzido para 15s para impedir congelamentos longos no Render
 });
 
 function tratarErroPromessa(modelo) {
@@ -61,7 +61,7 @@ function sanitizarHistorico(historico) {
 
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
-  let resultado = texto.replace(/\s+/g, ' ').trim();
+  let resultado = textov = texto.replace(/\s+/g, ' ').trim();
   if (resultado.length > 15000) {
     resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
   }
@@ -155,7 +155,7 @@ app.post('/api/perguntar', async (req, res) => {
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       try {
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const dadosBrutos = partesBase64[1] || partesBase64[PartesBase64.length - 1];
+        const dadosBrutos = partesBase64[1] || partesBase64[partesBase64.length - 1]; // CORREÇÃO: Removido case-sensitivity errado
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
 
@@ -211,27 +211,11 @@ app.post('/api/perguntar', async (req, res) => {
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
     let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
-    if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
-      const promptVisaoPuro = [
-        { role: "user", content: [
-            { type: "text", text: `Você é a capacidade visual do Cactus. Analise a imagem com base no contexto do sistema e responda em PORTUGUÊS: "${ultimaMensagem}"` },
-            { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
-        ]}
-      ];
-      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento." }, ...historicoSanitizado];
-
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
-        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
-      ]);
-    } else {
-      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-        nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
-      ]);
-    }
+    [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
+    ]);
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
     const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
@@ -240,7 +224,6 @@ app.post('/api/perguntar', async (req, res) => {
     const promptJuiz = `
 Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
 Garanta fidelidade aos relatórios de RAG local, arquivos extraídos ou dados da internet inseridos se houver.
-Se houver imagem, dê preferência absoluta à Opção 1 (Visão).
 Retorne APENAS o texto puro da resposta definitiva, sem metalinguagem.
 
 Pergunta: "${ultimaMensagem}"
@@ -255,6 +238,7 @@ Opção 3: ${txt3}
       max_tokens: 1000 
     }).catch(() => null);
 
+    // CORREÇÃO: Varredura de sobrevivência acelerada
     let respostaFinalConsolidada = "";
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
