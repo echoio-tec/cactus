@@ -69,7 +69,7 @@ function comprimirETrancarTexto(texto) {
 function verificarMensagemTrivial(texto) {
   const t = texto.toLowerCase().trim();
   if (!t) return true;
-  const termosTriviais = ['oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 'obrigado', 'obrigada', 'valeu', 'ok', 'blz', 'tchau', 'sim', 'nao', 'não'];
+  const termosTriviais = ['oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 'obrigado', 'obrigada', 'valeu', 'show', 'ok', 'blz', 'tchau', 'vlw', 'sim', 'nao', 'não', 'ajuda'];
   return t.split(' ').length <= 2 || termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
 }
 
@@ -88,6 +88,7 @@ async function buscarNaWeb(query) {
   }
 }
 
+// ROTAS DE SESSÕES
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -113,6 +114,7 @@ app.get('/api/chats/:id/mensagens', async (req, res) => {
   return res.json(data);
 });
 
+// ROUTER PRINCIPAL
 app.post('/api/perguntar', async (req, res) => {
   let respostaFinalConsolidada = "Erro: Sem resposta.";
   let logRAG = "";
@@ -124,9 +126,9 @@ app.post('/api/perguntar', async (req, res) => {
   if (!chatId) return res.status(400).json({ error: 'chatId obrigatório.' });
 
   try {
-    let sistemaTexto = "Seu nome é Cactus. Responda em português de forma profunda e científica.";
-    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA]: ${memoryContext}`;
-    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ]: ${customInstructions}`;
+    let sistemaTexto = "Seu nome é Cactus. Você é um assistente de inteligência artificial de elite, forte, prestativo e com rigor científico. Responda em português (PT-BR) de forma profunda, exata e analítica.";
+    if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
+    if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       flagDocumentoAtivo = true;
@@ -135,7 +137,8 @@ app.post('/api/perguntar', async (req, res) => {
         await supabase.from('chat_documents').delete().eq('chat_id', chatId);
         
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const bufferArquivo = Buffer.from(partesBase64[1] || partesBase64[0], 'base64');
+        const dadosBrutos = partesBase64[1] || partesBase64[0]; 
+        const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
         let textoExtraido = "";
 
@@ -187,7 +190,7 @@ app.post('/api/perguntar', async (req, res) => {
         respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`;
       }
 
-      const auditGrafica = { deepseek: "SDXL Ativo", gemma: "N/A", llama8b: "N/A", webRaw: "Módulo de Imagem" };
+      const auditGrafica = { deepseek: "SDXL Ativo", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico Ativo" };
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
         { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditGrafica }
@@ -203,13 +206,13 @@ app.post('/api/perguntar', async (req, res) => {
 
     const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
     if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
-      const chamadaFastPath = await nvidia.chat.completions.create({
+      const llamadaFastPath = await nvidia.chat.completions.create({
         model: "deepseek-ai/deepseek-v4-flash",
         messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta em no máximo duas frases." }, ...promptTextualPuro.slice(1)],
         max_tokens: 120
       }).catch(tratarErroPromessa("FastPath"));
 
-      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : chamadaFastPath.choices[0].message.content;
+      respostaFinalConsolidada = llamadaFastPath.error ? llamadaFastPath.message : llamadaFastPath.choices[0].message.content;
       
       const auditTrivial = { deepseek: respostaFinalConsolidada, gemma: "N/A", llama8b: "N/A", webRaw: "Fast-Path Ativo" };
       await supabase.from('messages').insert([
@@ -224,7 +227,7 @@ app.post('/api/perguntar', async (req, res) => {
       sistemaTexto += `\n\n[DADOS INTERNET]:\n${dadosInternet}`;
     }
 
-    // ⚡ OTIMIZAÇÃO DE VELOCIDADE: Limite de 3.5 segundos por modelo para evitar esperas infinitas em timeouts externos
+    // Chamadas assíncronas paralelas com controle estrito de corrida por modelo
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
       corridaTimeout(nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }), 3500).catch(tratarErroPromessa("DeepSeek")),
       corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }), 3500).catch(tratarErroPromessa("Llama-8B")),
@@ -233,9 +236,10 @@ app.post('/api/perguntar', async (req, res) => {
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
     txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
-    txt3 = llamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
+    // CORREÇÃO ORTOGRÁFICA ABSOLUTA: Alterado de llamadaFiltro3 para chamadaFiltro3
+    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
-    const promptJuiz = `Determine a melhor resposta estruturada em português.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+    const promptJuiz = `Determine a melhor resposta estruturada em português baseado estritamente no contexto fornecido.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
     const chamadaJuiz = await corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }), 3500).catch(() => null);
 
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
@@ -252,7 +256,6 @@ app.post('/api/perguntar', async (req, res) => {
       { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }
     ]);
 
-    // Mecanismo automático de renomeação do chat com base no assunto do primeiro turno
     const { data: chatAtual } = await supabase.from('chats').select('title').eq('id', chatId).single();
     if (chatAtual && chatAtual.title === 'Novo Chat') {
       const novoTitulo = flagDocumentoAtivo ? logDocNome : (ultimaMensagem.length > 25 ? ultimaMensagem.substring(0, 25) + '...' : ultimaMensagem);
