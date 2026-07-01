@@ -17,7 +17,7 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 15000 // Mantido em 15s para evitar congelamento do Render tier free
+  timeout: 15000 // Timeout rigoroso de 15s para evitar filas e loops no Render
 });
 
 function tratarErroPromessa(modelo) {
@@ -61,7 +61,8 @@ function sanitizarHistorico(historico) {
 
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
-  let resultado = texto.replace(/\s+/g, ' ').trim(); // CORREÇÃO: Removido o lixo de digitação residual
+  // CORREÇÃO DEFINITIVA: Removido qualquer atribuição implícita de variável global ou erro de sintaxe
+  let resultado = texto.replace(/\s+/g, ' ').trim();
   if (resultado.length > 15000) {
     resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
   }
@@ -101,6 +102,13 @@ async function buscarNaWeb(query) {
 }
 
 app.post('/api/perguntar', async (req, res) => {
+  // BLINDAGEM DE ESCOPO GLOBAL: Variáveis inicializadas no topo da rota garantem imunidade contra ReferenceError
+  let respostaFinalConsolidada = "Erro de processamento: Nenhuma IA do ringue analítico retornou dados a tempo.";
+  let logRAG = "[Sem dados alocados]";
+  let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
+  let flagDocumentoAtivo = false;
+  let logDocNome = "";
+
   const { historico, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
 
   if (!historico || historico.length === 0) return res.status(400).json({ error: 'Histórico ausente.' });
@@ -152,13 +160,12 @@ app.post('/api/perguntar', async (req, res) => {
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
-    let flagDocumentoAtivo = false;
-
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       flagDocumentoAtivo = true;
+      logDocNome = arquivoAnexo.nome;
       try {
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const dadosBrutos = partesBase64[1] || partesBase64[partesBase64.length - 1]; 
+        const dadosBrutos = partesBase64[1] || partesBase64[0]; 
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
 
@@ -183,7 +190,7 @@ app.post('/api/perguntar', async (req, res) => {
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
         sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO EXTRAÍDO PELO SERVIDOR (${arquivoAnexo.nome})]:\n${textoFinalDoc}`;
       } catch (errParser) {
-        sistemaTexto += `\n\n[ERRO DE LEITURA]: Falha ao processar arquivo ${arquivoAnexo.nome}.`;
+        sistemaTexto += `\n\n[ERRO DE LEITURA INTERNA]: Falha ao extrair dados do arquivo ${arquivoAnexo.nome}.`;
       }
     }
 
@@ -202,8 +209,6 @@ app.post('/api/perguntar', async (req, res) => {
       });
     }
 
-    // ⚡ OTIMIZAÇÃO E BLINDAGEM DO BARRAMENTO RAG:
-    // Se houver documento ativo, força a desativação da busca web para evitar poluição por prompts genéricos
     let dadosInternet = "Pesquisa Web: Inativa.";
     let permitirBuscaWeb = pesquisaWeb && !flagDocumentoAtivo;
 
@@ -211,7 +216,7 @@ app.post('/api/perguntar', async (req, res) => {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
       sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
     } else if (pesquisaWeb && flagDocumentoAtivo) {
-      dadosInternet = "Ignorada pelo servidor para priorizar a integridade do documento anexo.";
+      dadosInternet = "Ignorada para priorizar o processamento isolado do documento anexo.";
     }
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
@@ -242,9 +247,9 @@ app.post('/api/perguntar', async (req, res) => {
       ]);
     }
 
-    const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
+    txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
+    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
+    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
     const promptJuiz = `
 Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
@@ -263,7 +268,6 @@ Opção 3: ${txt3}
       max_tokens: 1000 
     }).catch(() => null);
 
-    let respostaFinalConsolidada = "";
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
     } else {
@@ -272,18 +276,18 @@ Opção 3: ${txt3}
       else respostaFinalConsolidada = txt3;
     }
 
-    let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
-    if (arquivoAnexo && arquivoAnexo.tipo === 'documento') logRAG += `[Doc Server Parse: ${arquivoAnexo.nome}] `;
+    if (logDocNome) logRAG += `[Doc Server Parse: ${logDocNome}] `;
     logRAG += `[Web Search Status: ${dadosInternet.substring(0, 60)}]`;
 
-    res.json({
-      respostaFinal: respuestaFinalConsolidada,
+    return res.json({
+      respostaFinal: respostaFinalConsolidada,
       auditoria: { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG }
     });
 
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // Tratamento de contingência contra erros fatais estruturais na rota
+    return res.status(500).json({ error: error.message });
   }
 });
 
