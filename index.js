@@ -155,7 +155,7 @@ app.post('/api/perguntar', async (req, res) => {
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       try {
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const dadosBrutos = partesBase64[1] || partesBase64[0];
+        const dadosBrutos = partesBase64[1] || partesBase64[PartesBase64.length - 1];
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
 
@@ -235,7 +235,7 @@ app.post('/api/perguntar', async (req, res) => {
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
     const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
-    const txt3 = chamadaFiltro3.error ? llamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
+    const txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : (chamadaFiltro3.choices?.[0]?.message?.content || "Sem resposta.");
 
     const promptJuiz = `
 Você é o Juiz do Cactus. Selecione ou consolide a melhor resposta estruturada em PORTUGUÊS (PT-BR).
@@ -255,13 +255,11 @@ Opção 3: ${txt3}
       max_tokens: 1000 
     }).catch(() => null);
 
-    // CORREÇÃO LOGICA DE REDUNDÂNCIA: Varredura inteligente de sobrevivência caso o Juiz sofra timeout
     let respostaFinalConsolidada = "";
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
     } else {
-      console.warn(`[Cactus-Redundância] Juiz offline. Extraindo resposta sobrevivente...`);
-      if (!chamadaFiltro2.error) respostaFinalConsolidada = txt2; // Entrega o Llama 8B (mais estável e veloz)
+      if (!chamadaFiltro2.error) respostaFinalConsolidada = txt2;
       else if (!chamadaFiltro1.error) respostaFinalConsolidada = txt1; 
       else respostaFinalConsolidada = txt3;
     }
