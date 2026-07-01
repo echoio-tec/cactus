@@ -3,7 +3,7 @@ const cors = require('cors');
 const { OpenAI } = require('openai');
 const { createClient } = require('@supabase/supabase-js');
 
-// Módulos de extração de texto server-side de alta performance
+// Módulos de extração de texto server-side
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
@@ -20,11 +20,16 @@ function tratarErroPromessa(modelo) {
   return (err) => ({ error: true, message: `Módulo ${modelo} indisponível: ${err.message}` });
 }
 
-// 🌾 BANCO DE ANCORAGEM ZOOTÉCNICA E AGRONÉGOCIO (MOCK RAG)
+// RESTRUTURAÇÃO LOGICA: Retorna o erro no catch interno para não quebrar o Promise.all do ringue analítico
+const corridaTimeout = (promessa, ms, modelo) => Promise.race([
+  promessa,
+  new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout de Latência no módulo ${modelo}`)), ms))
+]).catch((err) => ({ error: true, message: err.message }));
+
 const BASE_CONHECIMENTO_AGRO = {
   nutricao_aves: "Tabela Técnica (Embrapa/NRC): Frangos de corte na fase inicial (1 a 21 dias) exigem: Energia Metabolizável: 2.950 a 3.000 kcal/kg. Proteína Bruta: 21% a 22%. Lisina Digestível: 1,22%. Metionina Digestível: 0,49%. Cálcio: 0,92%. Fósforo Disponível: 0,43%.",
   nutricao_bovinos: "Padrão de Confinamento Bovino: Relação volumoso:concentrado para terminação geralmente varia de 20:80 a 10:90. Exigência média de MS (Matéria Seca): 2,3% a 2,5% do Peso Vivo (PV). Ganho de peso esperado em dietas de alto grão: 1,4 kg a 1,8 kg/dia.",
-  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências em plantas causam encurtamento de entrenós (rosetamento) e clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
+  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências em plantas causam encurtamento de entrenós (rosetamento) and clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
   pastagem: "Manejo de Capim-Panicum (Mombaça/Colonião): Altura de entrada no pasto: 90 cm. Altura de saída (resíduo): 30 a 40 cm. Período de descanso médio no período chuvoso: 28 a 32 dias. Superar a altura de entrada reduz o valor nutritivo devido ao alongamento de colmo."
 };
 
@@ -83,7 +88,7 @@ async function buscarNaWeb(query) {
   }
 }
 
-// ROTAS DE BANCO DE DADOS SESSÕES
+// ROTAS DE CHATS
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -109,9 +114,9 @@ app.get('/api/chats/:id/mensagens', async (req, res) => {
   return res.json(data);
 });
 
-// ROUTER PRINCIPAL DE PROCESSAMENTO
+// ROUTER PRINCIPAL DE INFERÊNCIA
 app.post('/api/perguntar', async (req, res) => {
-  let respostaFinalConsolidada = "Erro: Sem resposta dos modelos.";
+  let respostaFinalConsolidada = "Erro: Sem resposta operacional.";
   let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
@@ -125,11 +130,11 @@ app.post('/api/perguntar', async (req, res) => {
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
+    // CRUCIAL: O processamento e upload do arquivo ocorrem antes de disparar as IAs para impedir perdas por timeout
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       flagDocumentoAtivo = true;
       logDocNome = arquivoAnexo.nome;
       try {
-        // Limpa documentos antigos do chat corrente para evitar contaminações cruzadas
         await supabase.from('chat_documents').delete().eq('chat_id', chatId);
         
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
@@ -149,17 +154,20 @@ app.post('/api/perguntar', async (req, res) => {
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
         
-        // Renomeia o título da sessão diretamente com o nome do documento enviado
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
-        await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
+        const { error: errorDoc } = await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
+        if (errorDoc) console.error("Erro Supabase Document: ", errorDoc.message);
       } catch (errParser) {
-        console.error("Erro na extração de texto: ", errParser.message);
+        console.error("Erro de Parsing Interno: ", errParser.message);
       }
     }
 
+    // Resgata o documento persistido de forma assíncrona garantida
     const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
+    let conteudoDoDocumentoTexto = "";
     if (docs && docs.length > 0) {
       docs.forEach(d => {
+        conteudoDoDocumentoTexto += d.extracted_text;
         sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO ANEXADO EM ANÁLISE]:\n${d.extracted_text}`;
       });
     }
@@ -167,7 +175,6 @@ app.post('/api/perguntar', async (req, res) => {
     const { data: historicoBanco } = await supabase.from('messages').select('role, content').eq('chat_id', chatId).order('created_at', { ascending: true });
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
 
-    // Roteador Gráfico Ampliado: Intercepta comandos imperativos com tolerância linguística total
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
     const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || textoMinusculo.startsWith('/imagem') || 
                             textoMinusculo.startsWith('gerar uma imagem') || textoMinusculo.startsWith('gerar imagem') ||
@@ -176,20 +183,25 @@ app.post('/api/perguntar', async (req, res) => {
                             textoMinusculo.startsWith('crie imagem');
 
     if (ehPromptGrafico) {
-      const promptImagem = ultimaMensagem
+      let promptImagem = ultimaMensagem
         .replace(/^\/(gerar|imagem)\s*/i, '')
         .replace(/^(gerar uma imagem|gerar imagem|gere uma imagem|gere imagem|desenhe|crie uma imagem de|crie uma imagem|crie imagem)\s*/i, '')
         .trim();
 
-      try {
-        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
-        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`;
-      } catch (errImg) {
-        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
-        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`;
+      // BLINDAGEM DE IMAGEM: Injeta o resumo do documento técnico no prompt do SDXL para evitar delírios visuais
+      if (conteudoDoDocumentoTexto) {
+        promptImagem += ` em harmonia com o seguinte contexto técnico: ${conteudoDoDocumentoTexto.substring(0, 500)}`;
       }
 
-      const auditGrafica = { deepseek: "SDXL Core Engine", gemma: "N/A", llama8b: "N/A", webRaw: "Módulo Gráfico Ativo" };
+      try {
+        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem.split(' em harmonia')[0]}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`;
+      } catch (errImg) {
+        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem.split(' em harmonia')[0]}"**:\n\n![Imagem Gerada](${urlReserva})`;
+      }
+
+      const auditGrafica = { deepseek: "SDXL Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico" };
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
         { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditGrafica }
@@ -226,20 +238,18 @@ app.post('/api/perguntar', async (req, res) => {
       sistemaTexto += `\n\n[DADOS INTERNET]:\n${dadosInternet}`;
     }
 
-    // Execução robusta paralela das camadas de inteligência
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
+      corridaTimeout(nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }), 4500).catch(tratarErroPromessa("DeepSeek")),
+      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }), 4500).catch(tratarErroPromessa("Llama-8B")),
+      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }), 5500).catch(tratarErroPromessa("Llama-70B"))
     ]);
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
     txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
-    // CORREÇÃO ORTOGRÁFICA: Erro de escrita 'llamadaFiltro3' permanentemente corrigido para 'chamadaFiltro3'
     txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
     const promptJuiz = `Determine a melhor resposta estruturada em português baseado estritamente no contexto fornecido.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
-    const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }).catch(() => null);
+    const chamadaJuiz = await corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }), 4000).catch(() => null);
 
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
@@ -255,7 +265,6 @@ app.post('/api/perguntar', async (req, res) => {
       { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }
     ]);
 
-    // Forçador de Retitulação Automática baseada no contexto do primeiro turno
     const { data: chatAtual } = await supabase.from('chats').select('title').eq('id', chatId).single();
     if (chatAtual && chatAtual.title === 'Novo Chat') {
       const novoTitulo = flagDocumentoAtivo ? logDocNome : (ultimaMensagem.length > 25 ? ultimaMensagem.substring(0, 25) + '...' : ultimaMensagem);

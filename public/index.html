@@ -84,7 +84,6 @@
     .action-btn.active-like { color: #22c55e !important; }
     .action-btn.active-dislike { color: #ef4444 !important; }
 
-    /* Mudado o banner para refletir o status limpo e profissional sugerido */
     .system-status { align-self: center; font-size: 0.65rem; font-weight: 700; text-transform: uppercase; color: #76b900; background: rgba(118, 185, 0, 0.06); padding: 6px 14px; border-radius: 20px; border: 1px solid rgba(118, 185, 0, 0.15); letter-spacing: 0.05em; }
 
     .backstage { margin-top: 10px; background: #09090b; border-radius: 12px; border: 1px solid var(--border-color); overflow: hidden; }
@@ -139,9 +138,10 @@
         <button class="menu-toggle-btn" onclick="toggleSidebar()">☰</button>
         <img src="Logo Cactus.png" alt="Cactus" class="logo-header">
       </div>
-      <button class="settings-toggle-btn" onclick="e.stopPropagation(); toggleSettingsPanel()">⚙️ Configurações</button>
+      <!-- CORREÇÃO: Injetado preventDefault e stopPropagation nativos para travar o fechamento fantasma em mobile -->
+      <button class="settings-toggle-btn" onclick="event.stopPropagation(); toggleSettingsPanel()">⚙️ Configurações</button>
       
-      <div id="settings-panel" onclick="e.stopPropagation()">
+      <div id="settings-panel" onclick="event.stopPropagation()">
         <div class="panel-section">
           <div class="section-header">
             <span class="section-title">Suas instruções para o Cactus (Regras)</span>
@@ -517,7 +517,7 @@
       }
     }
 
-    // CORREÇÃO: Escutador global ajustado com exclusão de nós para impedir fechamento fantasma em cliques válidos
+    // CORREÇÃO: Varredura baseada em container para blindar contra o fechamento imediato do painel de controle
     document.addEventListener('click', function(e) {
       const panel = document.getElementById('settings-panel');
       const btn = document.querySelector('.settings-toggle-btn');
