@@ -17,7 +17,7 @@ app.use(express.static('public'));
 const nvidia = new OpenAI({
   apiKey: process.env.NVIDIA_API_KEY,
   baseURL: 'https://integrate.api.nvidia.com/v1',
-  timeout: 15000 // CALIBRAÇÃO: Reduzido para 15s para impedir congelamentos longos no Render
+  timeout: 15000 // Mantido em 15s para evitar congelamento do Render tier free
 });
 
 function tratarErroPromessa(modelo) {
@@ -61,7 +61,7 @@ function sanitizarHistorico(historico) {
 
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
-  let resultado = textov = texto.replace(/\s+/g, ' ').trim();
+  let resultado = texto.replace(/\s+/g, ' ').trim(); // CORREÇÃO: Removido o lixo de digitação residual
   if (resultado.length > 15000) {
     resultado = resultado.substring(0, 15000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR EM 15K CARACTERES FORÇANDO JANELA DE CONTEXTO]";
   }
@@ -152,10 +152,13 @@ app.post('/api/perguntar', async (req, res) => {
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
+    let flagDocumentoAtivo = false;
+
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
+      flagDocumentoAtivo = true;
       try {
         const partesBase64 = arquivoAnexo.conteudo.split(';base64,');
-        const dadosBrutos = partesBase64[1] || partesBase64[partesBase64.length - 1]; // CORREÇÃO: Removido case-sensitivity errado
+        const dadosBrutos = partesBase64[1] || partesBase64[partesBase64.length - 1]; 
         const bufferArquivo = Buffer.from(dadosBrutos, 'base64');
         const nomeMinusculo = arquivoAnexo.nome.toLowerCase();
 
@@ -199,10 +202,16 @@ app.post('/api/perguntar', async (req, res) => {
       });
     }
 
+    // ⚡ OTIMIZAÇÃO E BLINDAGEM DO BARRAMENTO RAG:
+    // Se houver documento ativo, força a desativação da busca web para evitar poluição por prompts genéricos
     let dadosInternet = "Pesquisa Web: Inativa.";
-    if (pesquisaWeb) {
+    let permitirBuscaWeb = pesquisaWeb && !flagDocumentoAtivo;
+
+    if (permitirBuscaWeb) {
       dadosInternet = await buscarNaWeb(ultimaMensagem);
       sistemaTexto += `\n\n[DADOS ATUALIZADOS DA INTERNET]:\n${dadosInternet}`;
+    } else if (pesquisaWeb && flagDocumentoAtivo) {
+      dadosInternet = "Ignorada pelo servidor para priorizar a integridade do documento anexo.";
     }
     
     const dadosCientificosLocais = recuperarContextoZootecnico(ultimaMensagem);
@@ -211,11 +220,27 @@ app.post('/api/perguntar', async (req, res) => {
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...historicoSanitizado];
     let chamadaFiltro1, chamadaFiltro2, chamadaFiltro3;
 
-    [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
-      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
-    ]);
+    if (arquivoAnexo && arquivoAnexo.tipo === 'imagem') {
+      const promptVisaoPuro = [
+        { role: "user", content: [
+            { type: "text", text: `Você é a capacidade visual do Cactus. Analise a imagem com base no contexto do sistema e responda em PORTUGUÊS: "${ultimaMensagem}"` },
+            { type: "image_url", image_url: { url: arquivoAnexo.conteudo } }
+        ]}
+      ];
+      const promptTextoCego = [{ role: "system", content: sistemaTexto + "\n\n[AVISO]: Imagem em processamento." }, ...historicoSanitizado];
+
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+        nvidia.chat.completions.create({ model: "meta/llama-3.2-11b-vision-instruct", messages: promptVisaoPuro }).catch(tratarErroPromessa("Llama-Vision")),
+        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextoCego }).catch(tratarErroPromessa("DeepSeek-Flash")),
+        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextoCego }).catch(tratarErroPromessa("Llama-8B"))
+      ]);
+    } else {
+      [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
+        nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek-Flash")),
+        nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
+        nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-3.3-70B"))
+      ]);
+    }
 
     const txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : (chamadaFiltro1.choices?.[0]?.message?.content || "Sem resposta.");
     const txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : (chamadaFiltro2.choices?.[0]?.message?.content || "Sem resposta.");
@@ -238,7 +263,6 @@ Opção 3: ${txt3}
       max_tokens: 1000 
     }).catch(() => null);
 
-    // CORREÇÃO: Varredura de sobrevivência acelerada
     let respostaFinalConsolidada = "";
     if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
@@ -251,10 +275,10 @@ Opção 3: ${txt3}
     let logRAG = "";
     if (dadosCientificosLocais) logRAG += `[Ancoragem Zootécnica] `;
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento') logRAG += `[Doc Server Parse: ${arquivoAnexo.nome}] `;
-    logRAG += pesquisaWeb ? `[Web Provedor]: ${dadosInternet.substring(0, 200)}...` : `[Pesquisa Web Inativa]`;
+    logRAG += `[Web Search Status: ${dadosInternet.substring(0, 60)}]`;
 
     res.json({
-      respostaFinal: respostaFinalConsolidada,
+      respostaFinal: respuestaFinalConsolidada,
       auditoria: { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG }
     });
 
