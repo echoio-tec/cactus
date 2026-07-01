@@ -13,7 +13,7 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
-// Conexão estável com a nova instância isolada do Supabase via variáveis de ambiente
+// Conexão estável com o Supabase utilizando chaves de ambiente
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 const nvidia = new OpenAI({ apiKey: process.env.NVIDIA_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', timeout: 15000 });
 
@@ -38,6 +38,24 @@ function recuperarContextoZootecnico(pergunta) {
   return "";
 }
 
+function sanitizarHistorico(historico) {
+  const limpo = [];
+  for (const msg of historico) {
+    if (msg.role === 'system') continue;
+    if (limpo.length === 0) {
+      if (msg.role === 'user') limpo.push({ role: msg.role, content: msg.content });
+    } else {
+      const ultima = limpo[limpo.length - 1];
+      if (ultima.role === msg.role) {
+        ultima.content += `\n${msg.content}`; 
+      } else {
+        limpo.push({ role: msg.role, content: msg.content });
+      }
+    }
+  }
+  return limpo;
+}
+
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
   let resultado = texto.replace(/\s+/g, ' ').trim();
@@ -47,16 +65,45 @@ function comprimirETrancarTexto(texto) {
   return resultado;
 }
 
-// 📁 ROTAS DE GERENCIAMENTO DE ESTADO RELACIONAL (SUPABASE SYNC)
+function verificarMensagemTrivial(texto) {
+  const t = texto.toLowerCase().trim();
+  if (!t) return true;
 
-// A. Listar todos os chats salvos no banco
+  const termosTriviais = [
+    'oi', 'ola', 'olá', 'tudo bem', 'tudo bom', 'bom dia', 'boa tarde', 'boa noite', 
+    'obrigado', 'obrigada', 'valeu', 'show', 'ok', 'blz', 'beleza', 'tchau', 'vlw', 
+    'entendi', 'perfeito', 'top', 'sim', 'nao', 'não', 'ajuda'
+  ];
+
+  const totalPalavras = t.split(' ').length;
+  if (totalPalavras <= 2) return true;
+
+  return termosTriviais.some(termo => t === termo || t.startsWith(termo + ' '));
+}
+
+async function buscarNaWeb(query) {
+  try {
+    if (!process.env.TAVILY_API_KEY) return "Aviso: Chave da Tavily ausente.";
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: process.env.TAVILY_API_KEY, query: query, search_depth: "basic", max_results: 3 })
+    });
+    if (!response.ok) return "Sem resultados relevantes da busca externa.";
+    const data = await response.json();
+    return data.results ? data.results.map(r => `Título: ${r.title}\nConteúdo: ${r.content}`).join('\n\n') : "Nenhum resultado encontrado.";
+  } catch (err) {
+    return `Falha na conexão com Tavily: ${err.message}`;
+  }
+}
+
+// ROTAS DE GERENCIAMENTO DE SESSÕES NO SUPABASE
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
   return res.json(data);
 });
 
-// B. Criar uma nova sessão física de chat com UUID estável
 app.post('/api/chats', async (req, res) => {
   const { title } = req.body;
   const { data, error } = await supabase.from('chats').insert({ title: title || 'Novo Chat' }).select().single();
@@ -64,23 +111,21 @@ app.post('/api/chats', async (req, res) => {
   return res.json(data);
 });
 
-// C. Deletar chat e todas as suas mensagens em cascata
 app.delete('/api/chats/:id', async (req, res) => {
   const { error } = await supabase.from('chats').delete().eq('id', req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   return res.json({ success: true });
 });
 
-// D. Resgatar histórico real de mensagens para renderização no front-end
 app.get('/api/chats/:id/mensagens', async (req, res) => {
   const { data, error } = await supabase.from('messages').select('role, content, auditoria').eq('chat_id', req.params.id).order('created_at', { ascending: true });
   if (error) return res.status(500).json({ error: error.message });
   return res.json(data);
 });
 
-// 🔬 PIPELINE PRINCIPAL DE INFERÊNCIA PARALELA
+// ROUTER PRINCIPAL DE PROCESSAMENTO
 app.post('/api/perguntar', async (req, res) => {
-  let respostaFinalConsolidada = "Erro: Nenhuma IA respondeu a tempo.";
+  let respostaFinalConsolidada = "Erro: Sem resposta dos modelos.";
   let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
@@ -88,10 +133,10 @@ app.post('/api/perguntar', async (req, res) => {
 
   const { chatId, ultimaMensagem, customInstructions, memoryContext, pesquisaWeb, arquivoAnexo } = req.body;
 
-  if (!chatId) return res.status(400).json({ error: 'Identificador do chat (chatId) obrigatório.' });
+  if (!chatId) return res.status(400).json({ error: 'chatId ausente.' });
 
   try {
-    let sistemaTexto = "Seu nome é Cactus. Responda em português de forma profunda, exata e científica.";
+    let sistemaTexto = "Seu nome é Cactus. Responda em português de forma profunda e científica.";
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA]: ${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ]: ${customInstructions}`;
 
@@ -116,28 +161,46 @@ app.post('/api/perguntar', async (req, res) => {
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
         
-        // Atualiza o título do chat no banco com o nome do documento enviado
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
-        
-        // Persiste o documento isoladamente no banco relacional
-        await supabase.from('chat_documents').insert({
-          chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc
-        });
+        await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
       } catch (errParser) {
-        console.error("Falha no parser:", errParser.message);
+        console.error(errParser.message);
       }
     }
 
-    // Resgate de Contexto Imune a Amnésia: O servidor reconecta o arquivo automaticamente em todas as próximas mensagens
     const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
     if (docs && docs.length > 0) {
       docs.forEach(d => {
-        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTIDO NO NOVO SUPABASE (${d.file_name})]:\n${d.extracted_text}`;
+        sistemaTexto += `\n\n[CONTEÚDO DO DOCUMENTO PERSISTED (${d.file_name})]:\n${d.extracted_text}`;
       });
     }
 
     const { data: historicoBanco } = await supabase.from('messages').select('role, content').eq('chat_id', chatId).order('created_at', { ascending: true });
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
+
+    const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
+    if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb) {
+      const chamadaFastPath = await nvidia.chat.completions.create({
+        model: "deepseek-ai/deepseek-v4-flash",
+        messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta em no máximo duas frases." }, ...promptTextualPuro.slice(1)],
+        max_tokens: 120
+      }).catch(tratarErroPromessa("DeepSeek-FastPath"));
+
+      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : chamadaFastPath.choices[0].message.content;
+      
+      await supabase.from('messages').insert([
+        { chat_id: chatId, role: 'user', content: ultimaMensagem },
+        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: { deepseek: respostaFinalConsolidada, gemma: "Ignorado", llama8b: "Ignorado", webRaw: "Fast-Path Ativo" } }
+      ]);
+
+      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: { deepseek: respostaFinalConsolidada, gemma: "N/A", llama8b: "N/A", webRaw: "Fast-Path Ativo" } });
+    }
+
+    let dadosInternet = "Pesquisa Web: Inativa.";
+    if (pesquisaWeb && !flagDocumentoAtivo) {
+      dadosInternet = await buscarNaWeb(ultimaMensagem);
+      sistemaTexto += `\n\n[DADOS DA INTERNET]:\n${dadosInternet}`;
+    }
 
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
       nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
@@ -146,30 +209,28 @@ app.post('/api/perguntar', async (req, res) => {
     ]);
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
-    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
+    txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content; // CORREÇÃO EXATA DO TYPO: Alterado de llamadaFiltro2 para chamadaFiltro2
     txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
     const promptJuiz = `Retorne APENAS a melhor resposta.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
     const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }).catch(() => null);
 
-    if (chamadaJuiz && llamadaJuiz.choices?.[0]?.message?.content) {
+    if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
       respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
     } else {
       respostaFinalConsolidada = !chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3);
     }
 
-    // Insere de forma permanente o novo turno no banco isolado
+    logRAG = `[Supabase RAG] Docs: ${docs ? docs.length : 0} | Internet: ${pesquisaWeb ? "Sim" : "Não"}`;
+    const objetoAuditoria = { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG };
+
+    // CORREÇÃO: Salvando o objeto de auditoria real no banco para evitar os logs em "N/A" ao recarregar a conversa
     await supabase.from('messages').insert([
       { chat_id: chatId, role: 'user', content: ultimaMensagem },
-      { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada }
+      { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }
     ]);
 
-    logRAG = `[Supabase Isolado Ativo] Docs na sessão: ${docs ? docs.length : 0}`;
-
-    return res.json({
-      respostaFinal: respostaFinalConsolidada,
-      auditoria: { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG }
-    });
+    return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: objetoAuditoria });
 
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -177,4 +238,4 @@ app.post('/api/perguntar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Operando com projeto isolado na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Ativo na porta ${PORT}`));

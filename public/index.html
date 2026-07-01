@@ -154,7 +154,7 @@
 
         <div class="panel-section">
           <div class="section-header">
-            <span class="section-title">Memória activa (Fatos sobre você)</span>
+            <span class="section-title">Memória ativa (Fatos sobre você)</span>
             <label class="switch">
               <input type="checkbox" id="memory-toggle" onchange="saveSettings()">
               <span class="slider"></span>
@@ -210,8 +210,6 @@
         }
 
         if (window.innerWidth > 768) document.body.classList.add('sidebar-open');
-        
-        // Sincroniza e puxa a lista real de sessões direto do Supabase
         await carregarListaChatsDoBanco();
       } catch (errInit) {
         console.error("Erro na inicialização:", errInit);
@@ -232,7 +230,17 @@
           await carregarChat(existe ? ultimoSalvo : listaChats[0].id);
         }
       } catch (e) {
-        console.error("Falha ao ler chats:", e);
+        console.error(e);
+      }
+    }
+
+    async function recarregarApenasTitulosDaBarraLateral() {
+      try {
+        const res = await fetch('/api/chats');
+        listaChats = await res.json();
+        renderrarInstanciaBarraLateral();
+      } catch (e) {
+        console.error(e);
       }
     }
 
@@ -254,6 +262,7 @@
           document.getElementById('attachment-img-preview').src = arquivoCarregado.conteudo;
           document.getElementById('attachment-img-preview').style.display = 'block';
           mostrarBarraAnexo(file.name);
+          userInput.focus(); // CORREÇÃO: Força o re-foco imediato no campo após anexar foto
         };
         reader.readAsDataURL(file);
       } else {
@@ -261,6 +270,7 @@
           arquivoCarregado = { tipo: 'documento', nome: file.name, conteudo: e.target.result };
           document.getElementById('attachment-img-preview').style.display = 'none';
           mostrarBarraAnexo(`📄 ${file.name}`);
+          userInput.focus(); // CORREÇÃO: Força o re-foco imediato no campo após anexar arquivo técnico
         };
         reader.readAsDataURL(file);
       }
@@ -307,7 +317,6 @@
         idChatAtivo = id;
         localStorage.setItem('teca_id_chat_ativo', idChatAtivo);
         
-        // Destaca a seleção visual na barra lateral gráfica
         document.querySelectorAll('.chat-item').forEach(item => {
           item.classList.toggle('active', item.getAttribute('data-id') === id);
         });
@@ -413,11 +422,13 @@
         if (data.error) {
           adicionarMensagemDiv('Ops! Houve uma interrupção: ' + data.error, 'ai');
         } else {
-          // Atualiza a barra lateral caso o título tenha mudado para o nome do documento no servidor
-          await carregarListaChatsDoBanco();
+          // CORREÇÃO VISUAL: Renderiza a resposta final na tela IMEDIATAMENTE sem fazer o full reload limpador
+          adicionarMensagemDivComBastidores(data.respostaFinal, data.auditoria);
+          // Recarrega apenas a lista lateral em background silencioso para renomear o título
+          await recarregarApenasTitulosDaBarraLateral();
         }
       } catch (error) {
-        loadingDiv.remove(); 
+        if(document.querySelector('.pulse')) loadingDiv.remove();
         adicionarMensagemDiv('Falha crítica de comunicação com o cluster Render.', 'ai');
       }
 
