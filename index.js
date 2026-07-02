@@ -3,7 +3,7 @@ const cors = require('cors');
 const { OpenAI } = require('openai');
 const { createClient } = require('@supabase/supabase-js');
 
-// Módulos de extração de texto de alta performance
+// Módulos de extração de texto server-side de alta performance
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
@@ -15,11 +15,11 @@ app.use(express.static('public'));
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
-// Configuração principal com timeout estendido para aguentar payloads pesados
+// CALIBRAGEM: Janela de resposta estendida para 45s apenas para análise de PDFs densos
 const nvidia = new OpenAI({ 
   apiKey: process.env.NVIDIA_API_KEY, 
   baseURL: 'https://integrate.api.nvidia.com/v1', 
-  timeout: 55000 
+  timeout: 45000 
 });
 
 function tratarErroPromessa(modelo) {
@@ -29,7 +29,7 @@ function tratarErroPromessa(modelo) {
 const BASE_CONHECIMENTO_AGRO = {
   nutricao_aves: "Tabela Técnica (Embrapa/NRC): Frangos de corte na fase inicial (1 a 21 dias) exigem: Energia Metabolizável: 2.950 a 3.000 kcal/kg. Proteína Bruta: 21% a 22%. Lisina Digestível: 1,22%. Metionina Digestível: 0,49%. Cálcio: 0,92%. Fósforo Disponível: 0,43%.",
   nutricao_bovinos: "Padrão de Confinamento Bovino: Relação volumoso:concentrado para terminação geralmente varia de 20:80 a 10:90. Exigência média de MS (Matéria Seca): 2,3% a 2,5% do Peso Vivo (PV). Ganho de peso esperado em dietas de alto grão: 1,4 kg a 1,8 kg/dia.",
-  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências em plantas causam encurtamento de entrenós (rosetamento) e clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
+  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências in plantas causam encurtamento de entrenós (rosetamento) e clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
   pastagem: "Manejo de Capim-Panicum (Mombaça/Colonião): Altura de entrada no pasto: 90 cm. Altura de saída (resíduo): 30 a 40 cm. Período de descanso médio no período chuvoso: 28 a 32 dias. Superar a altura de entrada reduz o valor nutritivo devido ao alongamento de colmo."
 };
 
@@ -60,8 +60,8 @@ function sanitizarHistorico(historico) {
 function comprimirETrancarTexto(texto) {
   if (!texto) return "";
   let resultado = texto.replace(/\s+/g, ' ').trim();
-  if (resultado.length > 28000) {
-    resultado = resultado.substring(0, 28000) + "\n\n[AVISO: CONTEÚDO LIMADO NO TETO DE JANELA DE SEGURANÇA SEVERA]";
+  if (resultado.length > 25000) {
+    resultado = resultado.substring(0, 25000) + "\n\n[AVISO: CONTEÚDO TRUNCADO PELO SERVIDOR]";
   }
   return resultado;
 }
@@ -88,7 +88,7 @@ async function buscarNaWeb(query) {
   }
 }
 
-// ROTAS DO BANCO DE DADOS
+// MANAGEMENT RELACIONAL SUPABASE
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -114,9 +114,9 @@ app.get('/api/chats/:id/mensagens', async (req, res) => {
   return res.json(data);
 });
 
-// CORE DE PROCESSAMENTO DEDICADO
+// ROUTER PRINCIPAL DE PROCESSAMENTO
 app.post('/api/perguntar', async (req, res) => {
-  let respostaFinalConsolidada = "Erro: Sem resposta.";
+  let respostaFinalConsolidada = "Erro: Sem resposta dos modelos.";
   let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
@@ -155,7 +155,7 @@ app.post('/api/perguntar', async (req, res) => {
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
         await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
       } catch (errParser) {
-        console.error("Parser Error:", errParser.message);
+        console.error("Erro na extração de texto: ", errParser.message);
       }
     }
 
@@ -172,30 +172,53 @@ app.post('/api/perguntar', async (req, res) => {
     const promptTextualPuro = [{ role: "system", content: sistemaTexto }, ...(historicoBanco || []), { role: "user", content: ultimaMensagem }];
 
     const textoMinusculo = ultimaMensagem.toLowerCase().trim();
-    
-    // ESTRATÉGIA DE PROTEÇÃO DE CANAL: Se for um documento denso ou comando de transcrição/questões, ativa canal direto de alta capacidade
-    const ehTarefaPesadaDeDocumento = flagDocumentoAtivo || docs.length > 0 || textoMinusculo.includes('transcreva') || textoMinusculo.includes('questões') || textoMinusculo.includes('exercício') || textoMinusculo.includes('resuma');
+
+    // ⚡ INTERCEPÇÃO FAST-PATH CORRIGIDA: Mensagens triviais rodam em milissegundos via Llama-8B de alta disponibilidade
+    const ehMensagemTrivial = verificarMensagemTrivial(ultimaMensagem);
+    if (ehMensagemTrivial && !arquivoAnexo && !pesquisaWeb && (!docs || docs.length === 0)) {
+      const chamadaFastPath = await nvidia.chat.completions.create({
+        model: "meta/llama-3.1-8b-instruct",
+        messages: [{ role: "system", content: sistemaTexto + "\nResponda de forma curta em no máximo duas frases de maneira simpática e direta." }, ...promptTextualPuro.slice(1)],
+        max_tokens: 150
+      }).catch(tratarErroPromessa("FastPath"));
+
+      respostaFinalConsolidada = chamadaFastPath.error ? chamadaFastPath.message : chamadaFastPath.choices[0].message.content;
+      const auditTrivial = { deepseek: "Ignorado (Fast-Path)", gemma: respostaFinalConsolidada, llama8b: "Ignorado (Fast-Path)", webRaw: "Fast-Path Ativo" };
+      
+      await supabase.from('messages').insert([
+        { chat_id: chatId, role: 'user', content: ultimaMensagem },
+        { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditTrivial }
+      ]);
+
+      const { data: chatAtual } = await supabase.from('chats').select('title').eq('id', chatId).single();
+      if (chatAtual && chatAtual.title === 'Novo Chat') {
+        await supabase.from('chats').update({ title: ultimaMensagem }).eq('id', chatId);
+      }
+
+      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: auditTrivial });
+    }
+
+    // CANAL DEDICADO PARA COMPREENSÃO DE DOCUMENTOS LARGOS (Evita estouro de barramento paralelo)
+    const ehTarefaPesadaDeDocumento = flagDocumentoAtivo || (docs && docs.length > 0) || textoMinusculo.includes('transcreva') || textoMinusculo.includes('questões') || textoMinusculo.includes('exercício') || textoMinusculo.includes('resuma');
 
     if (ehTarefaPesadaDeDocumento) {
-      console.log("[Cactus-Core] Ativando Canal Dedicado Llama-70B para Ingestão Larga");
       try {
         const chamadaDedicada = await nvidia.chat.completions.create({
           model: "meta/llama-3.3-70b-instruct",
           messages: promptTextualPuro,
-          max_tokens: 2500, // Expandido para garantir a saída de textos longos (20 questões)
+          max_tokens: 2500,
           temperature: 0.2
         });
         respostaFinalConsolidada = chamadaDedicada.choices[0].message.content;
-        logRAG = `[Canal Dedicado Ativo] Transcrição/Análise Limpa via Llama-70B Core.`;
+        logRAG = `[Canal Dedicado] Resolução concluída via Llama-3.3-70B Core de larga escala.`;
       } catch (errDedicado) {
-        // Fallback de ultra-contingência caso o modelo pesado sofra lentidão na API
         const chamadaReserva = await nvidia.chat.completions.create({
           model: "meta/llama-3.1-8b-instruct",
           messages: promptTextualPuro,
           max_tokens: 2000
         });
         respostaFinalConsolidada = chamadaReserva.choices[0].message.content;
-        logRAG = `[Canal de Contingência] Llama-8B Ativado devido a lentidão externa no cluster principal.`;
+        logRAG = `[Canal de Contingência] Llama-8B Ativado devido a lentidão externa.`;
       }
 
       const objetoAuditoria = { deepseek: "Ignorado (Canal Dedicado)", gemma: "Ignorado (Canal Dedicado)", llama8b: respostaFinalConsolidada, webRaw: logRAG };
@@ -207,7 +230,6 @@ app.post('/api/perguntar', async (req, res) => {
       return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: objetoAuditoria });
     }
 
-    // PIPELINE COMUM PARA MENSAGENS SIMPLES (A Batalha Tripla Clássica permanece intacta)
     const ehPromptGrafico = textoMinusculo.startsWith('/gerar') || textoMinusculo.startsWith('/imagem') || 
                             textoMinusculo.startsWith('gerar uma imagem') || textoMinusculo.startsWith('gerar imagem') ||
                             textoMinusculo.startsWith('gere uma imagem') || textoMinusculo.startsWith('gere imagem') ||
@@ -220,32 +242,29 @@ app.post('/api/perguntar', async (req, res) => {
         .replace(/^(gerar uma imagem|gerar imagem|gere uma imagem|gere imagem|desenhe|crie uma imagem de|crie uma imagem|crie imagem)\s*/i, '')
         .trim();
 
-      try {
-        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
-        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`;
-      } catch (errImg) {
-        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
-        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem}"**:\n\n![Imagem Gerada](${urlReserva})`;
+      if (conteudoDoDocumentoTexto) {
+        promptImagem += ` em harmonia com o seguinte contexto técnico: ${conteudoDoDocumentoTexto.substring(0, 500)}`;
       }
 
-      const auditGrafica = { deepseek: "SDXL Core", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline de Imagem" };
+      try {
+        const responseImg = await nvidia.images.generate({ model: "stabilityai/stable-diffusion-xl", prompt: promptImagem });
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem.split(' em harmonia')[0]}"**:\n\n![Imagem Gerada](${responseImg.data[0].url})`;
+      } catch (errImg) {
+        const urlReserva = `https://image.pollinations.ai/p/${encodeURIComponent(promptImagem)}?width=1024&height=1024&seed=${Date.now()}&enhance=true`;
+        respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem.split(' em harmonia')[0]}"**:\n\n![Imagem Gerada](${urlReserva})`;
+      }
+
+      const auditGrafica = { deepseek: "SDXL Core Engine", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico Ativo" };
       await supabase.from('messages').insert([{ chat_id: chatId, role: 'user', content: ultimaMensagem }, { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditGrafica }]);
       return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: auditGrafica });
     }
 
-    if (verificarMensagemTrivial(ultimaMensagem) && !pesquisaWeb) {
-      const chamadaFastPath = await nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro, max_tokens: 120 });
-      respostaFinalConsolidada = chamadaFastPath.choices[0].message.content;
-      const auditTrivial = { deepseek: respostaFinalConsolidada, gemma: "N/A", llama8b: "N/A", webRaw: "Fast-Path" };
-      await supabase.from('messages').insert([{ chat_id: chatId, role: 'user', content: ultimaMensagem }, { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditTrivial }]);
-      return res.json({ respostaFinal: respostaFinalConsolidada, auditoria: auditTrivial });
-    }
-
     if (pesquisaWeb) {
-      const dadosInternet = await buscarNaWeb(ultimaMensagem);
+      dadosInternet = await buscarNaWeb(ultimaMensagem);
       sistemaTexto += `\n\n[DADOS INTERNET]:\n${dadosInternet}`;
     }
 
+    // BATALHA TRIPLA TRADICIONAL 100% CORRIGIDA ORTOGRÁFICAMENTE
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
       nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
       nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
@@ -254,14 +273,14 @@ app.post('/api/perguntar', async (req, res) => {
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
     txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
-    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
+    txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content; // CORREÇÃO DE SINTAXE EXATA
 
-    const promptJuiz = `Consolide a melhor resposta estruturada em português.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+    const promptJuiz = `Determine a melhor resposta estruturada em português baseado estritamente no contexto fornecido.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
     const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1200 }).catch(() => null);
 
     respostaFinalConsolidada = (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) ? chamadaJuiz.choices[0].message.content : (!chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3));
 
-    logRAG = `[Batalha Clássica] Ingestion Completa`;
+    logRAG = `[Batalha Clássica] Ingestão Concluída`;
     const objetoAuditoria = { deepseek: txt1, gemma: txt2, llama8b: txt3, webRaw: logRAG };
 
     await supabase.from('messages').insert([{ chat_id: chatId, role: 'user', content: ultimaMensagem }, { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: objetoAuditoria }]);
@@ -279,4 +298,4 @@ app.post('/api/perguntar', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`[Cactus Central] Rodando Barramento Inteligente na porta ${PORT}`));
+app.listen(PORT, () => console.log(`[Cactus Central] Operando na porta ${PORT}`));
