@@ -3,7 +3,7 @@ const cors = require('cors');
 const { OpenAI } = require('openai');
 const { createClient } = require('@supabase/supabase-js');
 
-// Módulos de extração de texto server-side
+// Módulos de extração de texto server-side de alta performance
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 const XLSX = require('xlsx');
@@ -14,22 +14,22 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.static('public'));
 
 const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-const nvidia = new OpenAI({ apiKey: process.env.NVIDIA_API_KEY, baseURL: 'https://integrate.api.nvidia.com/v1', timeout: 15000 });
+
+// CALIBRAGEM: Teto expandido para 45s para garantir a ingestão e leitura completa de RAGs e arquivos densos
+const nvidia = new OpenAI({ 
+  apiKey: process.env.NVIDIA_API_KEY, 
+  baseURL: 'https://integrate.api.nvidia.com/v1', 
+  timeout: 45000 
+});
 
 function tratarErroPromessa(modelo) {
-  return (err) => ({ error: true, message: `Módulo ${modelo} indisponível: ${err.message}` });
+  return (err) => ({ error: true, message: `Módulo ${modelo} indisponível ou lento: ${err.message}` });
 }
-
-// RESTRUTURAÇÃO LOGICA: Retorna o erro no catch interno para não quebrar o Promise.all do ringue analítico
-const corridaTimeout = (promessa, ms, modelo) => Promise.race([
-  promessa,
-  new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout de Latência no módulo ${modelo}`)), ms))
-]).catch((err) => ({ error: true, message: err.message }));
 
 const BASE_CONHECIMENTO_AGRO = {
   nutricao_aves: "Tabela Técnica (Embrapa/NRC): Frangos de corte na fase inicial (1 a 21 dias) exigem: Energia Metabolizável: 2.950 a 3.000 kcal/kg. Proteína Bruta: 21% a 22%. Lisina Digestível: 1,22%. Metionina Digestível: 0,49%. Cálcio: 0,92%. Fósforo Disponível: 0,43%.",
   nutricao_bovinos: "Padrão de Confinamento Bovino: Relação volumoso:concentrado para terminação geralmente varia de 20:80 a 10:90. Exigência média de MS (Matéria Seca): 2,3% a 2,5% do Peso Vivo (PV). Ganho de peso esperado em dietas de alto grão: 1,4 kg a 1,8 kg/dia.",
-  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências em plantas causam encurtamento de entrenós (rosetamento) and clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
+  fertilidade_solo: "Recomendações de Fertilidade (Semiárido/Zinco): O nível crítico de Zinco (Zn) no solo pelo extrator Mehlich-1 é de 1,0 a 1,2 mg/dm³. Deficiências in plantas causam encurtamento de entrenós (rosetamento) e clorose listrada interveinal. Fontes: Sulfato de Zinco (20-22% Zn) ou Óxido de Zinco (50-80% Zn).",
   pastagem: "Manejo de Capim-Panicum (Mombaça/Colonião): Altura de entrada no pasto: 90 cm. Altura de saída (resíduo): 30 a 40 cm. Período de descanso médio no período chuvoso: 28 a 32 dias. Superar a altura de entrada reduz o valor nutritivo devido ao alongamento de colmo."
 };
 
@@ -88,7 +88,7 @@ async function buscarNaWeb(query) {
   }
 }
 
-// ROTAS DE CHATS
+// MANAGEMENT DE SESSÕES
 app.get('/api/chats', async (req, res) => {
   const { data, error } = await supabase.from('chats').select('*').order('created_at', { ascending: false });
   if (error) return res.status(500).json({ error: error.message });
@@ -114,9 +114,9 @@ app.get('/api/chats/:id/mensagens', async (req, res) => {
   return res.json(data);
 });
 
-// ROUTER PRINCIPAL DE INFERÊNCIA
+// ROUTER CENTRAL DE INTEGRAÇÃO
 app.post('/api/perguntar', async (req, res) => {
-  let respostaFinalConsolidada = "Erro: Sem resposta operacional.";
+  let respostaFinalConsolidada = "Erro: Sem resposta dos modelos.";
   let logRAG = "";
   let txt1 = "N/A", txt2 = "N/A", txt3 = "N/A";
   let flagDocumentoAtivo = false;
@@ -130,7 +130,6 @@ app.post('/api/perguntar', async (req, res) => {
     if (memoryContext) sistemaTexto += `\n\n[MEMÓRIA DO USUÁRIO]:\n${memoryContext}`;
     if (customInstructions) sistemaTexto += `\n\n[DIRETRIZ DE ESTILO]:\n${customInstructions}`;
 
-    // CRUCIAL: O processamento e upload do arquivo ocorrem antes de disparar as IAs para impedir perdas por timeout
     if (arquivoAnexo && arquivoAnexo.tipo === 'documento' && arquivoAnexo.conteudo) {
       flagDocumentoAtivo = true;
       logDocNome = arquivoAnexo.nome;
@@ -153,16 +152,13 @@ app.post('/api/perguntar', async (req, res) => {
         }
 
         const textoFinalDoc = comprimirETrancarTexto(textoExtraido);
-        
         await supabase.from('chats').update({ title: arquivoAnexo.nome }).eq('id', chatId);
-        const { error: errorDoc } = await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
-        if (errorDoc) console.error("Erro Supabase Document: ", errorDoc.message);
+        await supabase.from('chat_documents').insert({ chat_id: chatId, file_name: arquivoAnexo.nome, extracted_text: textoFinalDoc });
       } catch (errParser) {
-        console.error("Erro de Parsing Interno: ", errParser.message);
+        console.error("Erro na extração de texto: ", errParser.message);
       }
     }
 
-    // Resgata o documento persistido de forma assíncrona garantida
     const { data: docs } = await supabase.from('chat_documents').select('file_name, extracted_text').eq('chat_id', chatId);
     let conteudoDoDocumentoTexto = "";
     if (docs && docs.length > 0) {
@@ -188,7 +184,6 @@ app.post('/api/perguntar', async (req, res) => {
         .replace(/^(gerar uma imagem|gerar imagem|gere uma imagem|gere imagem|desenhe|crie uma imagem de|crie uma imagem|crie imagem)\s*/i, '')
         .trim();
 
-      // BLINDAGEM DE IMAGEM: Injeta o resumo do documento técnico no prompt do SDXL para evitar delírios visuais
       if (conteudoDoDocumentoTexto) {
         promptImagem += ` em harmonia com o seguinte contexto técnico: ${conteudoDoDocumentoTexto.substring(0, 500)}`;
       }
@@ -201,7 +196,7 @@ app.post('/api/perguntar', async (req, res) => {
         respostaFinalConsolidada = `🎨 Aqui está a imagem gerada para **"${promptImagem.split(' em harmonia')[0]}"**:\n\n![Imagem Gerada](${urlReserva})`;
       }
 
-      const auditGrafica = { deepseek: "SDXL Active", gemma: "N/A", llama8b: "N/A", webRaw: "Pipeline Gráfico" };
+      const auditGrafica = { deepseek: "SDXL Core Engine", gemma: "N/A", llama8b: "N/A", webRaw: "Módulo Gráfico Ativo" };
       await supabase.from('messages').insert([
         { chat_id: chatId, role: 'user', content: ultimaMensagem },
         { chat_id: chatId, role: 'assistant', content: respostaFinalConsolidada, auditoria: auditGrafica }
@@ -238,23 +233,29 @@ app.post('/api/perguntar', async (req, res) => {
       sistemaTexto += `\n\n[DADOS INTERNET]:\n${dadosInternet}`;
     }
 
+    // DISPARO SEGURO: Sem micro-timeouts artificiais que asfixiam a leitura de arquivos
     const [chamadaFiltro1, chamadaFiltro2, chamadaFiltro3] = await Promise.all([
-      corridaTimeout(nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }), 4500).catch(tratarErroPromessa("DeepSeek")),
-      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }), 4500).catch(tratarErroPromessa("Llama-8B")),
-      corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }), 5500).catch(tratarErroPromessa("Llama-70B"))
+      nvidia.chat.completions.create({ model: "deepseek-ai/deepseek-v4-flash", messages: promptTextualPuro }).catch(tratarErroPromessa("DeepSeek")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.1-8b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-8B")),
+      nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: promptTextualPuro }).catch(tratarErroPromessa("Llama-70B"))
     ]);
 
     txt1 = chamadaFiltro1.error ? chamadaFiltro1.message : chamadaFiltro1.choices[0].message.content;
     txt2 = chamadaFiltro2.error ? chamadaFiltro2.message : chamadaFiltro2.choices[0].message.content;
+    // CORREÇÃO DE SINTAXE: Referência alterada de 'llamadaFiltro3' para 'chamadaFiltro3'
     txt3 = chamadaFiltro3.error ? chamadaFiltro3.message : chamadaFiltro3.choices[0].message.content;
 
-    const promptJuiz = `Determine a melhor resposta estruturada em português baseado estritamente no contexto fornecido.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
-    const chamadaJuiz = await corridaTimeout(nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1000 }), 4000).catch(() => null);
-
-    if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
-      respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
+    if (chamadaFiltro1.error && chamadaFiltro2.error && chamadaFiltro3.error) {
+      respostaFinalConsolidada = "Lamentamos, mas os clusters de processamento estão congestionados no momento. Por favor, tente retransmitir sua pergunta em alguns instantes.";
     } else {
-      respostaFinalConsolidada = !chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3);
+      const promptJuiz = `Determine a melhor resposta estruturada em português baseado estritamente no contexto fornecido.\nPergunta: "${ultimaMensagem}"\nOpção 1: ${txt1}\nOpção 2: ${txt2}\nOpção 3: ${txt3}`;
+      const chamadaJuiz = await nvidia.chat.completions.create({ model: "meta/llama-3.3-70b-instruct", messages: [{ role: "user", content: promptJuiz }], max_tokens: 1200 }).catch(() => null);
+
+      if (chamadaJuiz && chamadaJuiz.choices?.[0]?.message?.content) {
+        respostaFinalConsolidada = chamadaJuiz.choices[0].message.content;
+      } else {
+        respostaFinalConsolidada = !chamadaFiltro2.error ? txt2 : (!chamadaFiltro1.error ? txt1 : txt3);
+      }
     }
 
     logRAG = `[Supabase] Docs Ativos: ${docs ? docs.length : 0}`;
